@@ -58,26 +58,20 @@ int main(int argc, char **argv)
   int M = atoi(argv[1]);
   int N = atoi(argv[2]);
   float **kernel = adapt_kernel(init_kernel(3, 3), 3, 3, M, N);
-  /*
-    //Kernel
-    printf("\nKernel:\n");
-    stampa_f(kernel, M, N);
-  */
+
   int **img = init(M, N);
   printf("Iniziale:\n");
   stampa(img, M, N);
-  //FFT
+
+  //FFT immagine
   complex **t_img = fft(img, M, N);
   float **s_img = fft_spectre_f(t_img, M, N);
-  /*
-  printf("\nTrasformata:\n");
-  stampa_complex(t_img, M, N);
-  printf("\nTrasformata (Spettro):\n");
-  stampa_f(s_img, M, N);
-  */
+
+  //FFT kernel
   complex **t_kernel = fft_f(kernel, M, N);
   float **s_kernel = fft_spectre_f(t_kernel, M, N);
 
+  //Convoluzione
   complex ** res = conv(t_img, t_kernel, M, N);
 
   printf("\nConvoluzione:\n");
@@ -88,4 +82,11 @@ int main(int argc, char **argv)
   printf("\nConvoluzione su spettro:\n");
   float **s_res2 = conv_spectre(s_img, s_kernel, M, N);
   stampa_f(s_res2, M, N);
+
+  printf("\nConvoluzione Anti-Trasformata:\n");
+  //stampa_complex(res, M, N);
+  double **output = anti_fft(res, M, N);
+  stampa_d(output, M, N);
+
+  return 0;
 }
