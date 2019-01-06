@@ -29,6 +29,16 @@ void stampa_f(float **m, int M, int N)
   }
 }
 
+void stampa_d(double **m, int M, int N)
+{
+  for(int i=0; i<M; i++)
+  {
+    for(int j=0; j<N; j++)
+      printf("%g\t", m[i][j]);
+    printf("\n");
+  }
+}
+
 void stampa_complex(complex **m, int M, int N)
 {
   for(int i=0; i<M; i++)
@@ -72,6 +82,19 @@ float ** init0_f(int M, int N)
   for(int i=0; i<M; i++)
   {
     m[i] = malloc(N * sizeof(float));
+    for(int j=0; j<N; j++)
+      m[i][j] = 0.0;
+  }
+
+  return m;
+}
+
+double ** init0_d(int M, int N)
+{
+  double **m = malloc(M * sizeof(double *));
+  for(int i=0; i<M; i++)
+  {
+    m[i] = malloc(N * sizeof(double));
     for(int j=0; j<N; j++)
       m[i][j] = 0.0;
   }
@@ -159,7 +182,6 @@ complex ** fft(int **f, int M, int N)
 
   return F;
 }
-
 complex ** fft_f(float **f, int M, int N)
 {
   complex **F = init_complex(M,N);
@@ -187,5 +209,35 @@ complex ** fft_f(float **f, int M, int N)
     }
 
   return F;
+}
+/*****************************/
+
+/*****************************/
+//Fast Fourier Anti-Transform (FFT)
+double ** anti_fft(complex **F, int M, int N)
+{
+  double **f = init0_d(M,N);
+  double pi = 4 * atan(1);
+
+  for(int x=0; x<M; x++)
+    for(int y=0; y<N; y++)
+    {
+      for(int u=0; u<M; u++)
+        for(int v=0; v<N; v++)
+        {
+          double r = 2 * pi *
+                 (((u*x)/(double)M) + ((v*y)/(double)N));
+          //printf("%g\n", r);
+
+          complex z = { cos(r), sin(r) };
+          //printf("%e + %e * i\n", z.real, z.imag);
+          complex _z = { (F[u][v].real * z.real)-(F[u][v].imag * z.imag),
+                         (F[u][v].real * z.imag)+(F[u][v].imag * z.real) };
+          //printf("%e + %e * i\n", z.real, z.imag);
+          f[x][y] += _z.real;
+        }
+    }
+
+  return f;
 }
 /*****************************/
