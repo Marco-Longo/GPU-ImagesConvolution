@@ -225,16 +225,17 @@ double ** anti_fft(complex **F, int M, int N)
       for(int u=0; u<M; u++)
         for(int v=0; v<N; v++)
         {
-          double r = 2 * pi *
-                 (((u*x)/(double)M) + ((v*y)/(double)N));
-          //printf("%g\n", r);
+          double r = 2 * pi * (((u*x)/(double)M) + ((v*y)/(double)N));
 
           complex z = { cos(r), sin(r) };
           //printf("%e + %e * i\n", z.real, z.imag);
           complex _z = { (F[u][v].real * z.real)-(F[u][v].imag * z.imag),
                          (F[u][v].real * z.imag)+(F[u][v].imag * z.real) };
-          //printf("%e + %e * i\n", z.real, z.imag);
+
+          //printf("\nParte immaginaria: %e", _z.imag);
+          //f[x][y] += sqrt(pow(_z.real, 2) + pow(_z.imag, 2));
           f[x][y] += _z.real;
+          //if(u==M-1 && v==N-1)  printf("\nParte immaginaria: %e", _z.imag);
         }
     }
 

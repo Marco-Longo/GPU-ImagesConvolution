@@ -4,6 +4,16 @@
 #include <math.h>
 #include "fft.h"
 
+int compare(float **m, float **n, int M, int N)
+{
+  for(int i=0; i<M; i++)
+    for(int j=0; j<N; j++)
+      if((m[i][j] - n[i][j]) > 1.0E-23)
+        return 0;
+
+  return 1;
+}
+
 float ** adapt_kernel(float **k, int M_i, int N_i, //dimensioni del kernel
                                  int M_f, int N_f) //dimensioni dell'immagine
 {
@@ -73,15 +83,18 @@ int main(int argc, char **argv)
 
   //Convoluzione
   complex ** res = conv(t_img, t_kernel, M, N);
-
-  printf("\nConvoluzione:\n");
   //stampa_complex(res, M, N);
-  float **s_res = fft_spectre_f(res, M, N);
-  stampa_f(s_res, M, N);
 
-  printf("\nConvoluzione su spettro:\n");
+  //printf("\nConvoluzione:\n");
+  float **s_res = fft_spectre_f(res, M, N);
+  //stampa_f(s_res, M, N);
+
+  //printf("\nConvoluzione su spettro:\n");
   float **s_res2 = conv_spectre(s_img, s_kernel, M, N);
-  stampa_f(s_res2, M, N);
+  //stampa_f(s_res2, M, N);
+  if(compare(s_res, s_res2, M, N))
+    printf("\nConvoluzione normale e convoluzione su spettro coincidono\n");
+  else  printf("\nLe due convoluzioni portano risultati differenti\n");
 
   printf("\nConvoluzione Anti-Trasformata:\n");
   //stampa_complex(res, M, N);
