@@ -158,7 +158,7 @@ complex ** fft(int **f, int M, int N)
 {
   complex **F = init_complex(M,N);
   double pi = 4 * atan(1);
-  int c = M*N;
+  //int c = M*N;
 
   for(int u=0; u<M; u++)
     for(int v=0; v<N; v++)
@@ -176,8 +176,8 @@ complex ** fft(int **f, int M, int N)
           F[u][v].imag += _z.imag;
         }
 
-      F[u][v].real /= c;
-      F[u][v].imag /= c;
+      //F[u][v].real /= c;
+      //F[u][v].imag /= c;
     }
 
   return F;
@@ -186,7 +186,7 @@ complex ** fft_f(float **f, int M, int N)
 {
   complex **F = init_complex(M,N);
   double pi = 4 * atan(1);
-  int c = M*N;
+  //int c = M*N;
 
   for(int u=0; u<M; u++)
     for(int v=0; v<N; v++)
@@ -204,8 +204,8 @@ complex ** fft_f(float **f, int M, int N)
           F[u][v].imag += _z.imag;
         }
 
-      F[u][v].real /= c;
-      F[u][v].imag /= c;
+      //F[u][v].real /= c;
+      //F[u][v].imag /= c;
     }
 
   return F;
@@ -218,6 +218,7 @@ double ** anti_fft(complex **F, int M, int N)
 {
   double **f = init0_d(M,N);
   double pi = 4 * atan(1);
+  double c = M*N;
 
   for(int x=0; x<M; x++)
     for(int y=0; y<N; y++)
@@ -237,6 +238,8 @@ double ** anti_fft(complex **F, int M, int N)
           f[x][y] += _z.real;
           //if(u==M-1 && v==N-1)  printf("\nParte immaginaria: %e", _z.imag);
         }
+
+      f[x][y] /= c;
     }
 
   return f;
