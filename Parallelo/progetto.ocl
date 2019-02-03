@@ -1,0 +1,77 @@
+/*kernel void draw(image2d_t read_only src, image2d_t write_only dest)
+{
+#if 1
+    const int col = get_global_id(0);
+    const int row = get_global_id(1);
+#else
+    const int row = get_global_id(0);
+    const int col = get_global_id(1);
+#endif
+    const int ncols = get_image_width(src);
+    const int nrows = get_image_height(src);
+
+    if(col >= ncols || row >= nrows)
+        return;
+
+    int4 val = (int4)(0,0,0,0);
+    if(row != ((nrows+1)/2))
+        val = read_imagei(src, (int2)(col, row));
+
+    write_imagei(dest, (int2)(col, row), val);
+}*/
+
+typedef struct
+{
+  double real;
+  double imag;
+} complex;
+
+#define PI 3.14159265358979323846
+
+kernel void fft(image2d_t read_only src, global complex* restrict dest,
+                local complex* restrict lmem, int u, int v)
+{
+#if 0
+    const int col = get_global_id(0);
+    const int row = get_global_id(1);
+#else
+    const int row = get_global_id(0);
+    const int col = get_global_id(1);
+#endif
+    const int ncols = get_image_width(src);
+    const int nrows = get_image_height(src);
+
+    if(col >= ncols || row >= nrows)
+        return;
+
+    int4 val = read_imagei(src, (int2)(row, col)); //f(x,y)
+    double r = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
+    complex z = { cos(r), -sin(r) };
+    complex _z = { (val.x * z.real), (val.x * z.imag) };
+
+    lmem->real += _z.real;
+    lmem->imag += _z.imag;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if(col == 0 && row == 0)
+    {
+      dest[u*ncols+v].real = lmem->real;
+      dest[u*ncols+v].imag = lmem->imag;
+    }
+}
+
+kernel void product(global const complex* restrict v1,
+                    global const complex* restrict v2,
+                    global complex* restrict vprod, int nrows, int ncols)
+{
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+
+    if(c >= ncols || r >= nrows)
+        return;
+
+    int idx = r*ncols+c;
+    //z*w = (a*c - b*d) + (a*d + b*c)*i
+    vprod[idx].real = (v1[idx].real*v2[idx].real) - (v1[idx].imag*v2[idx].imag);
+    vprod[idx].imag = (v1[idx].real*v2[idx].imag) + (v1[idx].imag*v2[idx].real);
+}
