@@ -156,6 +156,7 @@ void verify(const complex reale, int nrows, int ncols, int u, int v)
             res[x][y].imag = input[x][y] * z.imag;
         }
 
+    //Verify riduzione
     complex* atteso = malloc(sizeof(complex));
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
@@ -173,7 +174,7 @@ void verify(const complex reale, int nrows, int ncols, int u, int v)
         for (int c = 0; c < ncols; ++c) {
             complex atteso = { res[r][c].real, res[r][c].imag };
             complex reale = mat[r*ncols + c];
-            if ((atteso.real-reale.real)>1.0e-14 || (atteso.imag-reale.imag)>1.0e-14) {
+            if ((atteso.real-reale.real)>1.0e-10 || (atteso.imag-reale.imag)>1.0e-10) {
                 fprintf(stderr, "mismatch @ %d %d: %f+%fi != %f+%fi\n", r, c,
                   reale.real, reale.imag, atteso.real, atteso.imag);
                 exit(2);
@@ -253,7 +254,7 @@ int main(int argc, char *argv[])
         to_reduce /= 2;
         ++i;
     }
-    /////////////
+    ////////////
 
     err = clFinish(que);
     ocl_check(err, "clFinish");
@@ -261,10 +262,12 @@ int main(int argc, char *argv[])
     printf("fft: %gms\t%gGB/s\n", runtime_ms(evt_fft),
     (2.0*memsize/runtime_ns(evt_fft)));
 
+    //Tempi riduzione
     printf("sum: %gms\t%gGE/s\n",
         total_runtime_ms(evt_sum[1], evt_sum[i]),
         (1.0*numels)/total_runtime_ns(evt_sum[1], evt_sum[i])
         );
+
     /*
         cl_event evt_map, evt_unmap;
         complex *h_prod = clEnqueueMapBuffer(que, d_vprod,
@@ -293,7 +296,7 @@ int main(int argc, char *argv[])
         &h_sum, 0, NULL, NULL);
 
     verify(h_sum, nrows, ncols, u, v);
-
+    
 
     clReleaseMemObject(d_v1);
     clReleaseMemObject(d_vprod);

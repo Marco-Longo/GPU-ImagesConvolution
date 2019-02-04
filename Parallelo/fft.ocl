@@ -26,7 +26,7 @@ kernel void matinit(global int *out, int nrows, int ncols)
 kernel void fft(global int* restrict src, global complex* restrict dest,
                 int u, int v, int nrows, int ncols)
 {
-#if 0
+#if 1
     const int col = get_global_id(0);
     const int row = get_global_id(1);
 #else
