@@ -1,0 +1,63 @@
+typedef struct
+{
+  double real;
+  double imag;
+} complex;
+
+
+#define PI 3.14159265358979323846
+
+kernel void matinit(global int *out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0); //usiamo questa soluzione perchè più efficente
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    out[r*ncols+c] = 50;
+}
+
+kernel void fft(global int* restrict src, global complex* restrict dest,
+                int u, int v, int nrows, int ncols)
+{
+#if 0
+    const int col = get_global_id(0);
+    const int row = get_global_id(1);
+#else
+    const int row = get_global_id(0);
+    const int col = get_global_id(1);
+#endif
+
+    if(col >= ncols || row >= nrows)
+        return;
+
+    int val = src[row*ncols+col];
+    double r = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
+    complex z = { cos(r), -sin(r) };
+    complex _z = { (val * z.real), (val * z.imag) };
+
+    dest[row*ncols+col].real = _z.real;
+    dest[row*ncols+col].imag = _z.imag;
+}
+
+kernel void somma(global complex* restrict input, global complex* restrict output,
+                  int numels, int u, int v)
+{
+    /* lanciato con get_global_size = N/2 */
+    int idx = get_global_id(0);
+
+    if (idx >= numels)
+        return;
+
+    double2 in_real = (double2)(input[2*idx].real, input[2*idx+1].real);
+    double2 in_imag = (double2)(input[2*idx].imag, input[2*idx+1].imag);
+
+    output[idx].real = in_real.x + in_real.y;
+    output[idx].imag = in_imag.x + in_imag.y;
+}
