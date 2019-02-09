@@ -142,52 +142,24 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_o
     return evt_sum;
 }
 
-void verify(const complex reale, int nrows, int ncols, int u, int v)
+void verify(complex** reale, int nrows, int ncols)
 {
     int** input = init(nrows, ncols);
-    complex** res = init_complex(nrows, ncols);
+    complex** atteso = fft_c(input, nrows, ncols);
 
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
         {
-            double r = 2 * PI * (((u*x)/(double)nrows) + ((v*y)/(double)ncols));
-            complex z = { cos(r), -sin(r) };
-            res[x][y].real = input[x][y] * z.real;
-            res[x][y].imag = input[x][y] * z.imag;
+            if ((atteso[x][y].real-reale[x][y].real)>1.0e-10 || (atteso[x][y].imag-reale[x][y].imag)>1.0e-10)
+                fprintf(stderr, "mismatch@ %d %d: %f+%fi != %f+%fi\n", x, y,
+                      reale[x][y].real, reale[x][y].imag, atteso[x][y].real, atteso[x][y].imag);
         }
-
-    //Verify riduzione
-    complex* atteso = malloc(sizeof(complex));
-    for (int x = 0; x < nrows; ++x)
-        for (int y = 0; y < ncols; ++y)
-        {
-            atteso->real += res[x][y].real;
-            atteso->imag += res[x][y].imag;
-        }
-
-    if ((atteso->real-reale.real)>1.0e-10 || (atteso->imag-reale.imag)>1.0e-10)
-      fprintf(stderr, "mismatch: %f+%fi != %f+%fi\n",
-              reale.real, reale.imag, atteso->real, atteso->imag);
-
-    /*
-    for (int r = 0; r < nrows; ++r) {
-        for (int c = 0; c < ncols; ++c) {
-            complex atteso = { res[r][c].real, res[r][c].imag };
-            complex reale = mat[r*ncols + c];
-            if ((atteso.real-reale.real)>1.0e-10 || (atteso.imag-reale.imag)>1.0e-10) {
-                fprintf(stderr, "mismatch @ %d %d: %f+%fi != %f+%fi\n", r, c,
-                  reale.real, reale.imag, atteso.real, atteso.imag);
-                exit(2);
-            }
-        }
-    }
-    */
 }
 
 int main(int argc, char *argv[])
 {
-    if (argc != 5)
-        error("sintassi: product nrows ncols u v");
+    if (argc != 3)
+        error("sintassi: product nrows ncols");
 
     const int nrows = atoi(argv[1]);
     const int ncols = atoi(argv[2]);
@@ -198,7 +170,7 @@ int main(int argc, char *argv[])
     if (nrows <= 0 || ncols <= 0)
         error("nrows, ncols devono essere positivi");
     if (numels & (numels-1))
-    		error("numels deve essere una potenza di due");
+            error("numels deve essere una potenza di due");
 
     cl_platform_id p = select_platform();
     cl_device_id d = select_device(p);
@@ -228,79 +200,68 @@ int main(int argc, char *argv[])
                                   memsize_complex/2, NULL, &err);
     ocl_check(err, "create buffer sum");
 
+    complex **res_fft = init_complex(nrows, ncols);
+
     cl_event evt_init = matinit(que, matinit_k,
         d_v1, nrows, ncols, 0, NULL);
 
-    int u,v;
-    u = atoi(argv[3]);
-    v = atoi(argv[4]);
-    cl_event evt_fft = fft(que, fft_k, d_v1, d_vprod, u, v, nrows, ncols,
+
+    cl_event evt_start, evt_end;
+
+    for(int u=0; u<nrows; ++u)
+        for(int v=0; v<ncols; ++v)
+        {
+            cl_event evt_fft;
+            if(u==0 && v==0)
+            {
+                evt_start = fft(que, fft_k, d_v1, d_vprod, u, v, nrows, ncols,
+                           1, &evt_init);
+                memcpy(&evt_fft, &evt_start, sizeof(cl_event));
+            }
+            else
+                evt_fft = fft(que, fft_k, d_v1, d_vprod, u, v, nrows, ncols,
                            1, &evt_init);
 
-    //RIDUZIONE
-    size_t nsums = log(numels)/log(2) + 1;
-    cl_event evt_sum[nsums+1];
-    cl_mem d_in = d_vprod;
-    cl_mem d_out = d_sum;
-    cl_int to_reduce = numels;
-    evt_sum[0] = evt_fft;
-    int i = 0;
-    while (to_reduce > 1) {
-        evt_sum[i+1] = sum(que, somma_k,
-            d_in, d_out, to_reduce, u, v, 1, evt_sum + i);
-        cl_mem tmp = d_out;
-        d_out = d_in;
-        d_in = tmp;
-        to_reduce /= 2;
-        ++i;
-    }
-    ////////////
+            //RIDUZIONE
+            size_t nsums = log(numels)/log(2) + 1;
+            cl_event evt_sum[nsums+1];
+            cl_mem d_in = d_vprod;
+            cl_mem d_out = d_sum;
+            cl_int to_reduce = numels;
+            evt_sum[0] = evt_fft;
+            int i = 0;
+            while (to_reduce > 1)
+            {
+                evt_sum[i+1] = sum(que, somma_k,
+                d_in, d_out, to_reduce, u, v, 1, evt_sum + i);
+                cl_mem tmp = d_out;
+                d_out = d_in;
+                d_in = tmp;
+                to_reduce /= 2;
+                ++i;
+            }
+            if(u==nrows-1 && v==ncols-1)
+                memcpy(&evt_end, &evt_sum[i], sizeof(cl_event));
 
-    err = clFinish(que);
-    ocl_check(err, "clFinish");
+            err = clFinish(que);
+            ocl_check(err, "clFinish");
 
-    printf("fft: %gms\t%gGB/s\n", runtime_ms(evt_fft),
-    (2.0*memsize/runtime_ns(evt_fft)));
+            //Estrazione risultato
+            err = clEnqueueReadBuffer(que, d_in,
+                    CL_TRUE, 0, sizeof(complex),
+                    &res_fft[u][v], 0, NULL, NULL);
 
-    //Tempi riduzione
-    printf("sum: %gms\t%gGE/s\n",
-        total_runtime_ms(evt_sum[1], evt_sum[i]),
-        (1.0*numels)/total_runtime_ns(evt_sum[1], evt_sum[i])
-        );
+        }
 
-    /*
-        cl_event evt_map, evt_unmap;
-        complex *h_prod = clEnqueueMapBuffer(que, d_vprod,
-            CL_TRUE, CL_MAP_READ,
-            0, memsize_complex,
-            0, NULL, &evt_map, &err);
-        ocl_check(err, "map buffer vprod");
-        printf("map: %gms\t%gGB/s\n",
-            runtime_ms(evt_map),
-            (1.0*memsize_complex)/runtime_ns(evt_map)
-              );
-        verify(h_prod, nrows, ncols, u, v);
-        err = clEnqueueUnmapMemObject(que, d_vprod, h_prod,
-            0, NULL, &evt_unmap);
-        ocl_check(err, "unmap buffer vprod");
-        clFinish(que);
-        printf("unmap: %gms\t%gGB/s\n",
-            runtime_ms(evt_unmap),
-            (1.0*memsize)/runtime_ns(evt_unmap)
-              );
-    */
+    printf("totale: %gms\t%gGB/s\n", total_runtime_ms(evt_start, evt_end),
+          ((2.0*memsize_complex*memsize_complex)/total_runtime_ns(evt_start, evt_end)));
 
-    complex h_sum;
-    err = clEnqueueReadBuffer(que, d_in,
-        CL_TRUE, 0, sizeof(complex),
-        &h_sum, 0, NULL, NULL);
-
-    verify(h_sum, nrows, ncols, u, v);
-    
+    //verify(res_fft, nrows, ncols);
 
     clReleaseMemObject(d_v1);
     clReleaseMemObject(d_vprod);
     clReleaseMemObject(d_sum);
+    free(res_fft);
 
     clReleaseKernel(matinit_k);
     clReleaseKernel(fft_k);
