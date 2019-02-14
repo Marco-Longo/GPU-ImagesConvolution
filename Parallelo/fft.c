@@ -46,7 +46,7 @@ cl_event matinit(cl_command_queue que, cl_kernel matinit_k,
 }
 /*
 cl_event product(cl_command_queue que, cl_kernel prod_k,
-    cl_mem d_v1, cl_mem d_v2, cl_mem d_vprod,
+    cl_mem d_v1, cl_mem d_v2, cl_mem d_v2,
     cl_int nrows, cl_int ncols, // dell'input
     int n_wait_events, cl_event *wait_events)
 {
@@ -56,7 +56,7 @@ cl_event product(cl_command_queue que, cl_kernel prod_k,
     ocl_check(err, "set prod arg %d", arg - 1);
     err = clSetKernelArg(prod_k, arg++, sizeof(d_v2), &d_v2);
     ocl_check(err, "set prod arg %d", arg - 1);
-    err = clSetKernelArg(prod_k, arg++, sizeof(d_vprod), &d_vprod);
+    err = clSetKernelArg(prod_k, arg++, sizeof(d_v2), &d_v2);
     ocl_check(err, "set prod arg %d", arg - 1);
     err = clSetKernelArg(prod_k, arg++, sizeof(nrows), &nrows);
     ocl_check(err, "set prod arg %d", arg - 1);
@@ -114,7 +114,7 @@ cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img,
 }
 
 cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_output,
-             cl_int numels, cl_int u, cl_int v, int n_wait_events, cl_event *wait_events)
+             cl_int numels, size_t _lws, size_t _gws, int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
@@ -125,13 +125,9 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_o
     ocl_check(err, "set somma arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(numels), &numels);
     ocl_check(err, "set somma arg %d", arg-1);
-    err = clSetKernelArg(somma_k, arg++, sizeof(u), &u);
-    ocl_check(err, "set somma arg %d", arg-1);
-    err = clSetKernelArg(somma_k, arg++, sizeof(v), &v);
-    ocl_check(err, "set somma arg %d", arg-1);
 
-    const size_t lws[] = { 256 };
-    const size_t gws[] = { round_mul_up(numels/2, lws[0]) };
+    const size_t lws[] = { _lws };
+    const size_t gws[] = { _gws };
 
     cl_event evt_sum;
 
@@ -150,7 +146,7 @@ void verify(complex** reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
         {
-            if ((atteso[x][y].real-reale[x][y].real)>1.0e-10 || (atteso[x][y].imag-reale[x][y].imag)>1.0e-10)
+            if ((atteso[x][y].real-reale[x][y].real)>1.0e-8 || (atteso[x][y].imag-reale[x][y].imag)>1.0e-8)
                 fprintf(stderr, "mismatch@ %d %d: %f+%fi != %f+%fi\n", x, y,
                       reale[x][y].real, reale[x][y].imag, atteso[x][y].real, atteso[x][y].imag);
         }
@@ -186,18 +182,22 @@ int main(int argc, char *argv[])
     cl_kernel fft_k = clCreateKernel(prog, "fft", &err);
     ocl_check(err, "create kernel fft");
 
-    cl_kernel somma_k = clCreateKernel(prog, "somma", &err);
+    cl_kernel somma_k = clCreateKernel(prog, "somma_x", &err);
     ocl_check(err, "create kernel somma");
+
+    const size_t lws0 = 256;
+    const size_t gws0 = 256*lws0;
+    size_t memsize_min = gws0*sizeof(complex);
 
     /* Allocazione buffer */
     cl_mem d_v1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                                  memsize, NULL, &err);
     ocl_check(err, "create buffer v1");
-    cl_mem d_vprod = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                    memsize_complex, NULL, &err);
+    cl_mem d_v2 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
+                                 memsize_complex > memsize_min ? memsize_complex : memsize_min, NULL, &err);
     ocl_check(err, "create buffer vprod");
-    cl_mem d_sum = clCreateBuffer(ctx, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                  memsize_complex/2, NULL, &err);
+    cl_mem d_vsum = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
+                                   memsize_min, NULL, &err);
     ocl_check(err, "create buffer sum");
 
     complex **res_fft = init_complex(nrows, ncols);
@@ -214,31 +214,34 @@ int main(int argc, char *argv[])
             cl_event evt_fft;
             if(u==0 && v==0)
             {
-                evt_start = fft(que, fft_k, d_v1, d_vprod, u, v, nrows, ncols,
+                evt_start = fft(que, fft_k, d_v1, d_v2, u, v, nrows, ncols,
                            1, &evt_init);
                 memcpy(&evt_fft, &evt_start, sizeof(cl_event));
             }
             else
-                evt_fft = fft(que, fft_k, d_v1, d_vprod, u, v, nrows, ncols,
+                evt_fft = fft(que, fft_k, d_v1, d_v2, u, v, nrows, ncols,
                            1, &evt_init);
 
             //RIDUZIONE
-            size_t nsums = log(numels)/log(2) + 1;
+            size_t lws = lws0;
+            size_t gws = gws0;
+            size_t nsums = 5;
             cl_event evt_sum[nsums+1];
-            cl_mem d_in = d_vprod;
-            cl_mem d_out = d_sum;
+            cl_mem d_in = d_v2;
+            cl_mem d_out = d_vsum;
             cl_int to_reduce = numels;
             evt_sum[0] = evt_fft;
-            int i = 0;
-            while (to_reduce > 1)
+            int i;
+            for(i=0; i<nsums; ++i)
             {
                 evt_sum[i+1] = sum(que, somma_k,
-                d_in, d_out, to_reduce, u, v, 1, evt_sum + i);
+                d_in, d_out, to_reduce, lws, gws, 1, evt_sum + i);
                 cl_mem tmp = d_out;
                 d_out = d_in;
                 d_in = tmp;
-                to_reduce /= 2;
-                ++i;
+                to_reduce = gws;
+                lws /= 4;
+                gws /= 16;
             }
             if(u==nrows-1 && v==ncols-1)
                 memcpy(&evt_end, &evt_sum[i], sizeof(cl_event));
@@ -256,11 +259,11 @@ int main(int argc, char *argv[])
     printf("totale: %gms\t%gGB/s\n", total_runtime_ms(evt_start, evt_end),
           ((2.0*memsize_complex*memsize_complex)/total_runtime_ns(evt_start, evt_end)));
 
-    //verify(res_fft, nrows, ncols);
+    verify(res_fft, nrows, ncols);
 
     clReleaseMemObject(d_v1);
-    clReleaseMemObject(d_vprod);
-    clReleaseMemObject(d_sum);
+    clReleaseMemObject(d_v2);
+    clReleaseMemObject(d_vsum);
     free(res_fft);
 
     clReleaseKernel(matinit_k);

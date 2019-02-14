@@ -47,7 +47,7 @@ kernel void fft(global int* restrict src, global complex* restrict dest,
 }
 
 kernel void somma(global complex* restrict input, global complex* restrict output,
-                  int numels, int u, int v)
+                  int numels)
 {
     /* lanciato con get_global_size = N/2 */
     int idx = get_global_id(0);
@@ -60,4 +60,26 @@ kernel void somma(global complex* restrict input, global complex* restrict outpu
 
     output[idx].real = in_real.x + in_real.y;
     output[idx].imag = in_imag.x + in_imag.y;
+}
+
+kernel void somma_x(global complex* restrict input, global complex* restrict output,
+                    int numels)
+{
+    const int gws = get_global_size(0);
+    const int el_per_wi = (numels + gws - 1)/gws;
+    
+    int idx = get_global_id(0);
+    complex acc = {0, 0};
+    
+    for(int i = 0; i < el_per_wi; ++i)
+    {
+        int idx_r = gws*i + idx;
+        if(idx_r >= numels)
+            break;
+        acc.real += input[idx_r].real;
+        acc.imag += input[idx_r].imag;
+    }
+    
+    output[idx].real = acc.real;
+    output[idx].imag = acc.imag;
 }
