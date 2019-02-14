@@ -83,3 +83,48 @@ kernel void somma_x(global complex* restrict input, global complex* restrict out
     output[idx].real = acc.real;
     output[idx].imag = acc.imag;
 }
+
+kernel void somma_lmem(global complex* restrict input, global complex* restrict output,
+                       local complex* restrict lmem, int numels)
+{
+    const int gws = get_global_size(0);
+    const int el_per_wi = (numels + gws - 1)/gws;
+    
+    int idx = get_global_id(0);
+    complex acc = {0, 0};
+    
+    for(int i = 0; i < el_per_wi; ++i)
+    {
+        int idx_r = gws*i + idx;
+        if(idx_r >= numels)
+            break;
+        acc.real += input[idx_r].real;
+        acc.imag += input[idx_r].imag;
+    }
+    
+    int lidx = get_local_id(0);
+    int lws = get_local_size(0);
+    
+    lmem[lidx].real = acc.real;
+    lmem[lidx].imag = acc.imag;
+    
+    for(int attivi = lws/2; attivi >= 1; attivi /= 2)
+    {
+        barrier(CLK_LOCAL_MEM_FENCE);
+        
+        if(lidx < attivi)
+        {
+            acc.real += lmem[lidx+attivi].real;
+            acc.imag += lmem[lidx+attivi].imag;
+            
+            lmem[lidx].real = acc.real;
+            lmem[lidx].imag = acc.imag;
+        }
+    }
+    
+    if(lidx == 0)
+    {
+        output[get_group_id(0)].real = acc.real;
+        output[get_group_id(0)].imag = acc.imag;
+    }
+}

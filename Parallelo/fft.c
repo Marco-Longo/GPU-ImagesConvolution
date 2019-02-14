@@ -123,6 +123,8 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_o
     ocl_check(err, "set somma arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(d_output), &d_output);
     ocl_check(err, "set somma arg %d", arg-1);
+    err = clSetKernelArg(somma_k, arg++, _lws*sizeof(complex), NULL);
+    ocl_check(err, "set vecsum arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(numels), &numels);
     ocl_check(err, "set somma arg %d", arg-1);
 
@@ -154,11 +156,14 @@ void verify(complex** reale, int nrows, int ncols)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
-        error("sintassi: product nrows ncols");
+    if (argc != 5)
+        error("sintassi: product nrows ncols lws nwg");
 
     const int nrows = atoi(argv[1]);
     const int ncols = atoi(argv[2]);
+    const size_t lws0 = atoi(argv[3]);
+    const size_t nwg = atoi(argv[4]);
+    
     const int numels = nrows*ncols;
     const size_t memsize = numels*sizeof(int);
     const size_t memsize_complex = numels*sizeof(complex);
@@ -182,11 +187,10 @@ int main(int argc, char *argv[])
     cl_kernel fft_k = clCreateKernel(prog, "fft", &err);
     ocl_check(err, "create kernel fft");
 
-    cl_kernel somma_k = clCreateKernel(prog, "somma_x", &err);
+    cl_kernel somma_k = clCreateKernel(prog, "somma_lmem", &err);
     ocl_check(err, "create kernel somma");
 
-    const size_t lws0 = 256;
-    const size_t gws0 = 256*lws0;
+    const size_t gws0 = nwg*lws0;
     size_t memsize_min = gws0*sizeof(complex);
 
     /* Allocazione buffer */
@@ -223,37 +227,26 @@ int main(int argc, char *argv[])
                            1, &evt_init);
 
             //RIDUZIONE
-            size_t lws = lws0;
-            size_t gws = gws0;
-            size_t nsums = 5;
-            cl_event evt_sum[nsums+1];
-            cl_mem d_in = d_v2;
-            cl_mem d_out = d_vsum;
-            cl_int to_reduce = numels;
-            evt_sum[0] = evt_fft;
-            int i;
-            for(i=0; i<nsums; ++i)
-            {
-                evt_sum[i+1] = sum(que, somma_k,
-                d_in, d_out, to_reduce, lws, gws, 1, evt_sum + i);
-                cl_mem tmp = d_out;
-                d_out = d_in;
-                d_in = tmp;
-                to_reduce = gws;
-                lws /= 4;
-                gws /= 16;
-            }
+            size_t nsums = (nwg == 1 ? 1 : 2);
+            const size_t lws_final = 32;
+            cl_event evt_sum[2];
+            
+            evt_sum[0] = sum(que, somma_k,
+                d_v2, d_vsum, numels, lws0, gws0, 1, &evt_fft);
+            if(nwg > 1)
+                evt_sum[1] = sum(que, somma_k, d_vsum, d_vsum, 
+                    nwg, lws_final, lws_final, 1, evt_sum);
+            
             if(u==nrows-1 && v==ncols-1)
-                memcpy(&evt_end, &evt_sum[i], sizeof(cl_event));
+                memcpy(&evt_end, &evt_sum[nsums-1], sizeof(cl_event));
 
             err = clFinish(que);
             ocl_check(err, "clFinish");
 
             //Estrazione risultato
-            err = clEnqueueReadBuffer(que, d_in,
+            err = clEnqueueReadBuffer(que, d_vsum,
                     CL_TRUE, 0, sizeof(complex),
                     &res_fft[u][v], 0, NULL, NULL);
-
         }
 
     printf("totale: %gms\t%gGB/s\n", total_runtime_ms(evt_start, evt_end),
