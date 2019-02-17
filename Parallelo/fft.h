@@ -56,7 +56,7 @@ int ** init(int M, int N)
   {
     m[i] = malloc(N * sizeof(int));
     for(int j=0; j<N; j++)
-      m[i][j] = 50;
+      m[i][j] = i+j;
       //m[i][j] = 10 + 10*j + N*10*i;
   }
 
