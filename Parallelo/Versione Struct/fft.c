@@ -81,8 +81,8 @@ cl_event product(cl_command_queue que, cl_kernel prod_k,
     return evt_prod;
 }
 */
-cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img, cl_mem d_dest_img,
-             int u, int v, int nrows, int ncols, int n_wait_events, cl_event *wait_events)
+cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img,
+             cl_mem d_dest_img, int u, int v, int nrows, int ncols, int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
@@ -114,8 +114,7 @@ cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img, cl_mem d_d
 }
 
 cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_output,
-             cl_int numels, cl_int offset, size_t _lws, size_t _gws,
-             int n_wait_events, cl_event *wait_events)
+             cl_int numels, size_t _lws, size_t _gws, int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
@@ -124,11 +123,9 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_o
     ocl_check(err, "set somma arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(d_output), &d_output);
     ocl_check(err, "set somma arg %d", arg-1);
-    err = clSetKernelArg(somma_k, arg++, _lws*sizeof(cl_double2), NULL);
+    err = clSetKernelArg(somma_k, arg++, _lws*sizeof(complex), NULL);
     ocl_check(err, "set vecsum arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(numels), &numels);
-    ocl_check(err, "set somma arg %d", arg-1);
-    err = clSetKernelArg(somma_k, arg++, sizeof(offset), &offset);
     ocl_check(err, "set somma arg %d", arg-1);
 
     const size_t lws[] = { _lws };
@@ -151,11 +148,9 @@ void verify(complex** reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
         {
-            if((atteso[x][y].real-reale[x][y].real)>1.0e-7 ||
-               (atteso[x][y].imag-reale[x][y].imag)>1.0e-7)
-                  fprintf(stderr, "mismatch@ %d %d: %f+%fi != %f+%fi\n", x, y,
-                          reale[x][y].real, reale[x][y].imag, atteso[x][y].real,
-                          atteso[x][y].imag);
+            if ((atteso[x][y].real-reale[x][y].real)>1.0e-8 || (atteso[x][y].imag-reale[x][y].imag)>1.0e-8)
+                fprintf(stderr, "mismatch@ %d %d: %f+%fi != %f+%fi\n", x, y,
+                      reale[x][y].real, reale[x][y].imag, atteso[x][y].real, atteso[x][y].imag);
         }
 }
 
@@ -168,10 +163,10 @@ int main(int argc, char *argv[])
     const int ncols = atoi(argv[2]);
     const size_t lws0 = atoi(argv[3]);
     const size_t nwg = atoi(argv[4]);
-
+    
     const int numels = nrows*ncols;
-    const size_t memsize = numels*sizeof(cl_int);
-    const size_t memsize_complex = numels*sizeof(cl_double2);
+    const size_t memsize = numels*sizeof(int);
+    const size_t memsize_complex = numels*sizeof(complex);
 
     if (nrows <= 0 || ncols <= 0)
         error("nrows, ncols devono essere positivi");
@@ -189,81 +184,73 @@ int main(int argc, char *argv[])
     cl_kernel matinit_k = clCreateKernel(prog, "matinit", &err);
     ocl_check(err, "create kernel matinit");
 
-    cl_kernel fft_k = clCreateKernel(prog, "fftx2", &err);
+    cl_kernel fft_k = clCreateKernel(prog, "fft", &err);
     ocl_check(err, "create kernel fft");
 
     cl_kernel somma_k = clCreateKernel(prog, "somma_lmem", &err);
     ocl_check(err, "create kernel somma");
 
     const size_t gws0 = nwg*lws0;
-    size_t memsize_min = gws0*sizeof(cl_double2);
+    size_t memsize_min = gws0*sizeof(complex);
 
     /* Allocazione buffer */
     cl_mem d_v1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                                  memsize, NULL, &err);
     ocl_check(err, "create buffer v1");
     cl_mem d_v2 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                 memsize_complex > memsize_min ? 2*memsize_complex : 2*memsize_min, NULL, &err);
-    ocl_check(err, "create buffer v2");
+                                 memsize_complex > memsize_min ? memsize_complex : memsize_min, NULL, &err);
+    ocl_check(err, "create buffer vprod");
     cl_mem d_vsum = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                   2*memsize_min, NULL, &err);
+                                   memsize_min, NULL, &err);
     ocl_check(err, "create buffer sum");
 
     complex **res_fft = init_complex(nrows, ncols);
 
-    //Inizializzazione
-    cl_event evt_init = matinit(que, matinit_k, d_v1, nrows, ncols, 0, NULL);
+    cl_event evt_init = matinit(que, matinit_k,
+        d_v1, nrows, ncols, 0, NULL);
 
-    //Trasformata
+
     cl_event evt_start, evt_end;
 
-    for(int u=0; u<nrows/2; ++u)
+    for(int u=0; u<nrows; ++u)
         for(int v=0; v<ncols; ++v)
         {
-            cl_event evt_fft = fft(que, fft_k, d_v1, d_v2, u, v,
-                                   nrows, ncols, 1, &evt_init);
+            cl_event evt_fft;
             if(u==0 && v==0)
-                memcpy(&evt_start, &evt_fft, sizeof(cl_event));
+            {
+                evt_start = fft(que, fft_k, d_v1, d_v2, u, v, nrows, ncols,
+                           1, &evt_init);
+                memcpy(&evt_fft, &evt_start, sizeof(cl_event));
+            }
+            else
+                evt_fft = fft(que, fft_k, d_v1, d_v2, u, v, nrows, ncols,
+                           1, &evt_init);
 
             //RIDUZIONE
             size_t nsums = (nwg == 1 ? 1 : 2);
             const size_t lws_final = 32;
-            cl_event evt_sum[4];
-
-            //Prima chiamata (offset 0)
-            evt_sum[0] = sum(que, somma_k, d_v2, d_vsum, numels, 0,
-                             lws0, gws0, 1, &evt_fft);
+            cl_event evt_sum[2];
+            
+            evt_sum[0] = sum(que, somma_k,
+                d_v2, d_vsum, numels, lws0, gws0, 1, &evt_fft);
             if(nwg > 1)
-                evt_sum[1] = sum(que, somma_k, d_vsum, d_vsum, nwg, 0,
-                                 lws_final, lws_final, 1, evt_sum);
-
-
-            //Seconda chiamata (offset numels / nwg)
-            evt_sum[2] = sum(que, somma_k, d_v2, d_vsum, numels, numels,
-                             lws0, gws0, 1, (evt_sum + nsums -1));
-            if(nwg > 1)
-                evt_sum[3] = sum(que, somma_k, d_vsum, d_vsum, nwg, nwg,
-                                 lws_final, lws_final, 1, evt_sum+2);
-
-            if(u==(nrows/2)-1 && v==ncols-1)
-                memcpy(&evt_end, &evt_sum[nsums+1], sizeof(cl_event));
+                evt_sum[1] = sum(que, somma_k, d_vsum, d_vsum, 
+                    nwg, lws_final, lws_final, 1, evt_sum);
+            
+            if(u==nrows-1 && v==ncols-1)
+                memcpy(&evt_end, &evt_sum[nsums-1], sizeof(cl_event));
 
             err = clFinish(que);
             ocl_check(err, "clFinish");
 
             //Estrazione risultato
-            cl_double2 *res = malloc(2*sizeof(cl_double2));
-            err = clEnqueueReadBuffer(que, d_vsum, CL_TRUE, 0,
-                                      2*sizeof(cl_double2), res, 0, NULL, NULL);
-            ocl_check(err, "read buffer vsum");
-            res_fft[u][v].real = res[0].s[0];
-            res_fft[u][v].imag = res[0].s[1];
-            res_fft[u+(nrows/2)][v].real = res[1].s[0];
-            res_fft[u+(nrows/2)][v].imag = res[1].s[1];
+            err = clEnqueueReadBuffer(que, d_vsum,
+                    CL_TRUE, 0, sizeof(complex),
+                    &res_fft[u][v], 0, NULL, NULL);
         }
 
     printf("totale: %gms\t%gGB/s\n", total_runtime_ms(evt_start, evt_end),
-           ((2.0*memsize_complex*memsize_complex)/total_runtime_ns(evt_start, evt_end)));
+          ((2.0*memsize_complex*memsize_complex)/total_runtime_ns(evt_start, evt_end)));
 
     verify(res_fft, nrows, ncols);
 

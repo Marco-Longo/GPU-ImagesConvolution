@@ -1,9 +1,7 @@
-typedef struct
-{
-  double real;
-  double imag;
-} complex;
-
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+typedef double2 complex;
+typedef double4 complex2;
+typedef double8 complex4;
 
 #define PI 3.14159265358979323846
 
@@ -39,11 +37,59 @@ kernel void fft(global int* restrict src, global complex* restrict dest,
 
     int val = src[row*ncols+col];
     double r = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
-    complex z = { cos(r), -sin(r) };
-    complex _z = { (val * z.real), (val * z.imag) };
 
-    dest[row*ncols+col].real = _z.real;
-    dest[row*ncols+col].imag = _z.imag;
+    dest[row*ncols+col] = (double2)(val*cos(r), -sin(r)*val);
+}
+
+kernel void fft4(global int4* restrict src, global complex4* restrict dest,
+                 int u, int v, int nrows, int ncols)
+{
+#if 1
+    const int col = get_global_id(0);
+    const int row = get_global_id(1);
+#else
+    const int row = get_global_id(0);
+    const int col = get_global_id(1);
+#endif
+
+    if(col >= ncols/4 || row >= nrows)
+        return;
+
+    int4 val = src[row*ncols/4+col];
+    double4 r = (double4)(((u*row)/(double)nrows) + ((v*(4*col+0))/(double)ncols),
+                          ((u*row)/(double)nrows) + ((v*(4*col+1))/(double)ncols),
+                          ((u*row)/(double)nrows) + ((v*(4*col+2))/(double)ncols),
+                          ((u*row)/(double)nrows) + ((v*(4*col+3))/(double)ncols)
+                         );
+    r *= 2 * PI;
+    dest[row*ncols/4+col] = (double8)(val.x*cos(r.x), -sin(r.x)*val.x,
+                                      val.y*cos(r.y), -sin(r.y)*val.y,
+                                      val.z*cos(r.z), -sin(r.z)*val.z,
+                                      val.w*cos(r.w), -sin(r.w)*val.w
+                                     );
+}
+
+kernel void fftx2(global int* restrict src, global complex* restrict dest, //allocata come 2*memsize
+                  int u, int v, int nrows, int ncols)
+{
+#if 1
+    const int col = get_global_id(0);
+    const int row = get_global_id(1);
+#else
+    const int row = get_global_id(0);
+    const int col = get_global_id(1);
+#endif
+
+    if(col >= ncols || row >= nrows)
+        return;
+
+    int val = src[row*ncols+col];
+
+    double r1 = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
+    double r2 = 2 * PI * ((((u+(nrows/2))*row)/(double)nrows) + ((v*col)/(double)ncols));
+
+    dest[row*ncols+col] = (double2)(val*cos(r1), -sin(r1)*val);
+    dest[(row+nrows)*ncols+col] = (double2)(val*cos(r2), -sin(r2)*val);
 }
 
 kernel void somma(global complex* restrict input, global complex* restrict output,
@@ -55,11 +101,10 @@ kernel void somma(global complex* restrict input, global complex* restrict outpu
     if (idx >= numels)
         return;
 
-    double2 in_real = (double2)(input[2*idx].real, input[2*idx+1].real);
-    double2 in_imag = (double2)(input[2*idx].imag, input[2*idx+1].imag);
+    double4 val = (double4)(input[2*idx].x, input[2*idx+1].x,
+                            input[2*idx].y, input[2*idx+1].y);
 
-    output[idx].real = in_real.x + in_real.y;
-    output[idx].imag = in_imag.x + in_imag.y;
+    output[idx] = (double2)((val.x + val.y), (val.z + val.w));
 }
 
 kernel void somma_x(global complex* restrict input, global complex* restrict output,
@@ -67,64 +112,173 @@ kernel void somma_x(global complex* restrict input, global complex* restrict out
 {
     const int gws = get_global_size(0);
     const int el_per_wi = (numels + gws - 1)/gws;
-    
+
     int idx = get_global_id(0);
-    complex acc = {0, 0};
-    
+    complex acc = (double2)(0, 0);
+
     for(int i = 0; i < el_per_wi; ++i)
     {
         int idx_r = gws*i + idx;
         if(idx_r >= numels)
             break;
-        acc.real += input[idx_r].real;
-        acc.imag += input[idx_r].imag;
+        acc.x += input[idx_r].x;
+        acc.y += input[idx_r].y;
     }
-    
-    output[idx].real = acc.real;
-    output[idx].imag = acc.imag;
+
+    output[idx] = (double2)(acc.x, acc.y);
+}
+
+kernel void somma_x4(global complex4* restrict input, global complex* restrict output,
+                     int numels) //multiplo di 4
+{
+    const int gws = get_global_size(0);
+    const int quarts = numels/4;
+    const int el_per_wi = (quarts + gws - 1)/gws;
+
+    int idx = get_global_id(0);
+    complex acc = (double2)(0, 0);
+
+    for(int i = 0; i < el_per_wi; ++i)
+    {
+        int idx_r = gws*i + idx;
+        if(idx_r >= quarts)
+            break;
+
+        complex4 val = input[idx_r]; //RE: s0, s2, s4, s6
+
+        acc.x += (val.s0 + val.s2) + (val.s4 + val.s6);
+        acc.y += (val.s1 + val.s3) + (val.s5 + val.s7);
+    }
+
+    output[idx] = (double2)(acc.x, acc.y);
 }
 
 kernel void somma_lmem(global complex* restrict input, global complex* restrict output,
-                       local complex* restrict lmem, int numels)
+                       local complex* restrict lmem, int numels, int offset)
 {
     const int gws = get_global_size(0);
     const int el_per_wi = (numels + gws - 1)/gws;
-    
+
     int idx = get_global_id(0);
-    complex acc = {0, 0};
-    
+    complex acc = (double2)(0, 0);
+
     for(int i = 0; i < el_per_wi; ++i)
     {
-        int idx_r = gws*i + idx;
-        if(idx_r >= numels)
+        int idx_r = gws*i + idx + offset;
+        if(idx_r >= (numels+offset))
             break;
-        acc.real += input[idx_r].real;
-        acc.imag += input[idx_r].imag;
+        acc.x += input[idx_r].x;
+        acc.y += input[idx_r].y;
     }
-    
+
     int lidx = get_local_id(0);
     int lws = get_local_size(0);
-    
-    lmem[lidx].real = acc.real;
-    lmem[lidx].imag = acc.imag;
-    
+    int nwg = gws/lws;
+
+    lmem[lidx] = (double2)(acc.x, acc.y);
+
     for(int attivi = lws/2; attivi >= 1; attivi /= 2)
     {
         barrier(CLK_LOCAL_MEM_FENCE);
-        
+
         if(lidx < attivi)
         {
-            acc.real += lmem[lidx+attivi].real;
-            acc.imag += lmem[lidx+attivi].imag;
-            
-            lmem[lidx].real = acc.real;
-            lmem[lidx].imag = acc.imag;
+            acc.x += lmem[lidx+attivi].x;
+            acc.y += lmem[lidx+attivi].y;
+
+            lmem[lidx] = (double2)(acc.x, acc.y);
         }
     }
-    
+
     if(lidx == 0)
     {
-        output[get_group_id(0)].real = acc.real;
-        output[get_group_id(0)].imag = acc.imag;
+        if(offset == 0)
+            output[get_group_id(0)] = (double2)(acc.x, acc.y);
+        else
+            output[get_group_id(0)+nwg] = (double2)(acc.x, acc.y);
     }
+}
+
+kernel void somma_lmem2(global complex2* restrict input, global complex* restrict output,
+                       local complex* restrict lmem, int numels)
+{
+    const int gws = get_global_size(0);
+    const int quarts = numels/2;
+    const int el_per_wi = (quarts + gws - 1)/gws;
+
+    int idx = get_global_id(0);
+    complex acc = (double2)(0, 0);
+
+    for(int i = 0; i < el_per_wi; ++i)
+    {
+        int idx_r = gws*i + idx;
+        if(idx_r >= quarts)
+            break;
+
+        complex2 val = input[idx_r]; //RE: s0, s2
+
+        acc.x += (val.s0 + val.s2);
+        acc.y += (val.s1 + val.s3);
+    }
+
+    int lidx = get_local_id(0);
+    int lws = get_local_size(0);
+
+    lmem[lidx] = (double2)(acc.x, acc.y);
+
+    for(int attivi = lws/2; attivi >= 1; attivi /= 2)
+    {
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        if(lidx < attivi)
+        {
+            acc += lmem[lidx+attivi];
+            lmem[lidx] = (double2)(acc.x, acc.y);
+        }
+    }
+
+    if(lidx == 0)
+        output[get_group_id(0)] = (double2)(acc.x, acc.y);
+}
+
+kernel void somma_lmem4(global complex4* restrict input, global complex* restrict output,
+                       local complex* restrict lmem, int numels)
+{
+    const int gws = get_global_size(0);
+    const int quarts = numels/4;
+    const int el_per_wi = (quarts + gws - 1)/gws;
+
+    int idx = get_global_id(0);
+    complex acc = (double2)(0, 0);
+
+    for(int i = 0; i < el_per_wi; ++i)
+    {
+        int idx_r = gws*i + idx;
+        if(idx_r >= quarts)
+            break;
+
+        complex4 val = input[idx_r];
+
+        acc.x += (val.s0 + val.s2) + (val.s4 + val.s6);
+        acc.y += (val.s1 + val.s3) + (val.s5 + val.s7);
+    }
+
+    int lidx = get_local_id(0);
+    int lws = get_local_size(0);
+
+    lmem[lidx] = (double2)(acc.x, acc.y);
+
+    for(int attivi = lws/2; attivi >= 1; attivi /= 2)
+    {
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        if(lidx < attivi)
+        {
+            acc += lmem[lidx+attivi];
+            lmem[lidx] = (double2)(acc.x, acc.y);
+        }
+    }
+
+    if(lidx == 0)
+        output[get_group_id(0)] = (double2)(acc.x, acc.y);
 }
