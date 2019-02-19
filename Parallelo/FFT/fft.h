@@ -3,10 +3,13 @@
 #include <time.h>
 #include <math.h>
 
+#define _2PI 6.283185307179586476925f
+typedef double ctype;
+
 typedef struct
 {
-  double real;
-  double imag;
+  ctype real;
+  ctype imag;
 } complex;
 
 void stampa(int **m, int M, int N)
@@ -157,7 +160,7 @@ float ** fft_spectre_f(complex **F, int M, int N)
 complex ** fft_c(int **f, int M, int N)
 {
   complex **F = init_complex(M,N);
-  double pi = 4 * atan(1);
+  //double pi = 4 * atan(1);
   //int c = M*N;
 
   for(int u=0; u<M; u++)
@@ -166,7 +169,7 @@ complex ** fft_c(int **f, int M, int N)
       for(int x=0; x<M; x++)
         for(int y=0; y<N; y++)
         {
-          double r = 2 * pi * (((u*x)/(double)M) + ((v*y)/(double)N));
+          ctype r = _2PI * (((u*x)/(ctype)M) + ((v*y)/(ctype)N));
           //printf("%g\n", r);
           complex z = { cos(r), -sin(r) };
           //printf("%e + %e * i\n", z.real, z.imag);
@@ -185,7 +188,7 @@ complex ** fft_c(int **f, int M, int N)
 complex ** fft_f(float **f, int M, int N)
 {
   complex **F = init_complex(M,N);
-  double pi = 4 * atan(1);
+  //double pi = 4 * atan(1);
   //int c = M*N;
 
   for(int u=0; u<M; u++)
@@ -194,7 +197,7 @@ complex ** fft_f(float **f, int M, int N)
       for(int x=0; x<M; x++)
         for(int y=0; y<N; y++)
         {
-          double r = 2 * pi * (((u*x)/(double)M) + ((v*y)/(double)N));
+          ctype r = _2PI * (((u*x)/(ctype)M) + ((v*y)/(ctype)N));
           //printf("%g\n", r);
           complex z = { cos(r), -sin(r) };
           //printf("%e + %e * i\n", z.real, z.imag);
@@ -214,11 +217,11 @@ complex ** fft_f(float **f, int M, int N)
 
 /*****************************/
 //Fast Fourier Anti-Transform (FFT)
-double ** anti_fft(complex **F, int M, int N)
+float ** anti_fft(complex **F, int M, int N)
 {
-  double **f = init0_d(M,N);
-  double pi = 4 * atan(1);
-  double c = M*N;
+  float **f = init0_f(M,N);
+  //double pi = 4 * atan(1);
+  ctype c = M*N*1.0f;
 
   for(int x=0; x<M; x++)
     for(int y=0; y<N; y++)
@@ -226,7 +229,7 @@ double ** anti_fft(complex **F, int M, int N)
       for(int u=0; u<M; u++)
         for(int v=0; v<N; v++)
         {
-          double r = 2 * pi * (((u*x)/(double)M) + ((v*y)/(double)N));
+          ctype r = _2PI * (((u*x)/(ctype)M) + ((v*y)/(ctype)N));
 
           complex z = { cos(r), sin(r) };
           //printf("%e + %e * i\n", z.real, z.imag);

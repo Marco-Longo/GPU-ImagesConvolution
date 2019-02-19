@@ -1,9 +1,10 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
+typedef double  real;
 typedef double2 complex;
 typedef double4 complex2;
 typedef double8 complex4;
 
-#define PI 3.14159265358979323846
+#define _2PI 6.283185307179586476925f
 
 kernel void matinit(global int *out, int nrows, int ncols)
 {
@@ -36,9 +37,10 @@ kernel void fft(global int* restrict src, global complex* restrict dest,
         return;
 
     int val = src[row*ncols+col];
-    double r = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
+    real r = _2PI * (((u*row)/(real)nrows) + ((v*col)/(real)ncols));
 
-    dest[row*ncols+col] = (double2)(val*cos(r), -sin(r)*val);
+    dest[row*ncols+col] = (complex)(val*cos(r), -sin(r)*val);
+    //funzione sincos, cospi/sinpi
 }
 
 kernel void fft4(global int4* restrict src, global complex4* restrict dest,
@@ -56,17 +58,17 @@ kernel void fft4(global int4* restrict src, global complex4* restrict dest,
         return;
 
     int4 val = src[row*ncols/4+col];
-    double4 r = (double4)(((u*row)/(double)nrows) + ((v*(4*col+0))/(double)ncols),
-                          ((u*row)/(double)nrows) + ((v*(4*col+1))/(double)ncols),
-                          ((u*row)/(double)nrows) + ((v*(4*col+2))/(double)ncols),
-                          ((u*row)/(double)nrows) + ((v*(4*col+3))/(double)ncols)
-                         );
-    r *= 2 * PI;
-    dest[row*ncols/4+col] = (double8)(val.x*cos(r.x), -sin(r.x)*val.x,
-                                      val.y*cos(r.y), -sin(r.y)*val.y,
-                                      val.z*cos(r.z), -sin(r.z)*val.z,
-                                      val.w*cos(r.w), -sin(r.w)*val.w
-                                     );
+    complex2 r = (complex2)(((u*row)/(real)nrows) + ((v*(4*col+0))/(real)ncols),
+                            ((u*row)/(real)nrows) + ((v*(4*col+1))/(real)ncols),
+                            ((u*row)/(real)nrows) + ((v*(4*col+2))/(real)ncols),
+                            ((u*row)/(real)nrows) + ((v*(4*col+3))/(real)ncols)
+                           );
+    r *= _2PI;
+    dest[row*ncols/4+col] = (complex4)(val.x*cos(r.x), -sin(r.x)*val.x,
+                                       val.y*cos(r.y), -sin(r.y)*val.y,
+                                       val.z*cos(r.z), -sin(r.z)*val.z,
+                                       val.w*cos(r.w), -sin(r.w)*val.w
+                                      );
 }
 
 kernel void fftx2(global int* restrict src, global complex* restrict dest, //allocata come 2*memsize
@@ -85,15 +87,15 @@ kernel void fftx2(global int* restrict src, global complex* restrict dest, //all
 
     int val = src[row*ncols+col];
 
-    double r1 = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
-    double r2 = 2 * PI * ((((u+(nrows/2))*row)/(double)nrows) + ((v*col)/(double)ncols));
+    real r1 = _2PI * (((u*row)/(real)nrows) + ((v*col)/(real)ncols));
+    real r2 = _2PI * ((((u+(nrows/2))*row)/(real)nrows) + ((v*col)/(real)ncols));
 
-    dest[row*ncols+col] = (double2)(val*cos(r1), -sin(r1)*val);
-    dest[(row+nrows)*ncols+col] = (double2)(val*cos(r2), -sin(r2)*val);
+    dest[row*ncols+col] = (complex)(val*cos(r1), -sin(r1)*val);
+    dest[(row+nrows)*ncols+col] = (complex)(val*cos(r2), -sin(r2)*val);
 }
 
-kernel void somma(global complex* restrict input, global complex* restrict output,
-                  int numels)
+kernel void somma(global complex* restrict input,
+                  global complex* restrict output, int numels)
 {
     /* lanciato con get_global_size = N/2 */
     int idx = get_global_id(0);
@@ -101,20 +103,20 @@ kernel void somma(global complex* restrict input, global complex* restrict outpu
     if (idx >= numels)
         return;
 
-    double4 val = (double4)(input[2*idx].x, input[2*idx+1].x,
-                            input[2*idx].y, input[2*idx+1].y);
+    complex2 val = (complex2)(input[2*idx].x, input[2*idx+1].x,
+                              input[2*idx].y, input[2*idx+1].y);
 
-    output[idx] = (double2)((val.x + val.y), (val.z + val.w));
+    output[idx] = (complex)((val.x + val.y), (val.z + val.w));
 }
 
-kernel void somma_x(global complex* restrict input, global complex* restrict output,
-                    int numels)
+kernel void somma_x(global complex* restrict input,
+                    global complex* restrict output, int numels)
 {
     const int gws = get_global_size(0);
     const int el_per_wi = (numels + gws - 1)/gws;
 
     int idx = get_global_id(0);
-    complex acc = (double2)(0, 0);
+    complex acc = (complex)(0, 0);
 
     for(int i = 0; i < el_per_wi; ++i)
     {
@@ -125,18 +127,18 @@ kernel void somma_x(global complex* restrict input, global complex* restrict out
         acc.y += input[idx_r].y;
     }
 
-    output[idx] = (double2)(acc.x, acc.y);
+    output[idx] = (complex)(acc.x, acc.y);
 }
 
-kernel void somma_x4(global complex4* restrict input, global complex* restrict output,
-                     int numels) //multiplo di 4
+kernel void somma_x4(global complex4* restrict input,
+                     global complex* restrict output, int numels) //multiplo di 4
 {
     const int gws = get_global_size(0);
     const int quarts = numels/4;
     const int el_per_wi = (quarts + gws - 1)/gws;
 
     int idx = get_global_id(0);
-    complex acc = (double2)(0, 0);
+    complex acc = (complex)(0, 0);
 
     for(int i = 0; i < el_per_wi; ++i)
     {
@@ -150,7 +152,7 @@ kernel void somma_x4(global complex4* restrict input, global complex* restrict o
         acc.y += (val.s1 + val.s3) + (val.s5 + val.s7);
     }
 
-    output[idx] = (double2)(acc.x, acc.y);
+    output[idx] = (complex)(acc.x, acc.y);
 }
 
 kernel void somma_lmem(global complex* restrict input, global complex* restrict output,
@@ -160,7 +162,7 @@ kernel void somma_lmem(global complex* restrict input, global complex* restrict 
     const int el_per_wi = (numels + gws - 1)/gws;
 
     int idx = get_global_id(0);
-    complex acc = (double2)(0, 0);
+    complex acc = (complex)(0, 0);
 
     for(int i = 0; i < el_per_wi; ++i)
     {
@@ -175,7 +177,7 @@ kernel void somma_lmem(global complex* restrict input, global complex* restrict 
     int lws = get_local_size(0);
     int nwg = gws/lws;
 
-    lmem[lidx] = (double2)(acc.x, acc.y);
+    lmem[lidx] = (complex)(acc.x, acc.y);
 
     for(int attivi = lws/2; attivi >= 1; attivi /= 2)
     {
@@ -186,16 +188,16 @@ kernel void somma_lmem(global complex* restrict input, global complex* restrict 
             acc.x += lmem[lidx+attivi].x;
             acc.y += lmem[lidx+attivi].y;
 
-            lmem[lidx] = (double2)(acc.x, acc.y);
+            lmem[lidx] = (complex)(acc.x, acc.y);
         }
     }
 
     if(lidx == 0)
     {
         if(offset == 0)
-            output[get_group_id(0)] = (double2)(acc.x, acc.y);
+            output[get_group_id(0)] = (complex)(acc.x, acc.y);
         else
-            output[get_group_id(0)+nwg] = (double2)(acc.x, acc.y);
+            output[get_group_id(0)+nwg] = (complex)(acc.x, acc.y);
     }
 }
 
@@ -207,7 +209,7 @@ kernel void somma_lmem2(global complex2* restrict input, global complex* restric
     const int el_per_wi = (quarts + gws - 1)/gws;
 
     int idx = get_global_id(0);
-    complex acc = (double2)(0, 0);
+    complex acc = (complex)(0, 0);
 
     for(int i = 0; i < el_per_wi; ++i)
     {
@@ -224,7 +226,7 @@ kernel void somma_lmem2(global complex2* restrict input, global complex* restric
     int lidx = get_local_id(0);
     int lws = get_local_size(0);
 
-    lmem[lidx] = (double2)(acc.x, acc.y);
+    lmem[lidx] = (complex)(acc.x, acc.y);
 
     for(int attivi = lws/2; attivi >= 1; attivi /= 2)
     {
@@ -233,12 +235,12 @@ kernel void somma_lmem2(global complex2* restrict input, global complex* restric
         if(lidx < attivi)
         {
             acc += lmem[lidx+attivi];
-            lmem[lidx] = (double2)(acc.x, acc.y);
+            lmem[lidx] = (complex)(acc.x, acc.y);
         }
     }
 
     if(lidx == 0)
-        output[get_group_id(0)] = (double2)(acc.x, acc.y);
+        output[get_group_id(0)] = (complex)(acc.x, acc.y);
 }
 
 kernel void somma_lmem4(global complex4* restrict input, global complex* restrict output,
@@ -249,7 +251,7 @@ kernel void somma_lmem4(global complex4* restrict input, global complex* restric
     const int el_per_wi = (quarts + gws - 1)/gws;
 
     int idx = get_global_id(0);
-    complex acc = (double2)(0, 0);
+    complex acc = (complex)(0, 0);
 
     for(int i = 0; i < el_per_wi; ++i)
     {
@@ -266,7 +268,7 @@ kernel void somma_lmem4(global complex4* restrict input, global complex* restric
     int lidx = get_local_id(0);
     int lws = get_local_size(0);
 
-    lmem[lidx] = (double2)(acc.x, acc.y);
+    lmem[lidx] = (complex)(acc.x, acc.y);
 
     for(int attivi = lws/2; attivi >= 1; attivi /= 2)
     {
@@ -275,10 +277,10 @@ kernel void somma_lmem4(global complex4* restrict input, global complex* restric
         if(lidx < attivi)
         {
             acc += lmem[lidx+attivi];
-            lmem[lidx] = (double2)(acc.x, acc.y);
+            lmem[lidx] = (complex)(acc.x, acc.y);
         }
     }
 
     if(lidx == 0)
-        output[get_group_id(0)] = (double2)(acc.x, acc.y);
+        output[get_group_id(0)] = (complex)(acc.x, acc.y);
 }

@@ -4,9 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
+#include <float.h>
 #include "fft.h"
 
-#define PI 3.14159265358979323846
+#define _2PI 6.283185307179586476925f
+typedef cl_double2 complex_t;
 
 void error(const char *msg)
 {
@@ -14,9 +17,9 @@ void error(const char *msg)
     exit(1);
 }
 
-cl_event matinit(cl_command_queue que, cl_kernel matinit_k,
-    cl_mem d_mat, cl_int nrows, cl_int ncols,
-    int n_wait_events, cl_event *wait_events)
+cl_event matinit(cl_command_queue que, cl_kernel matinit_k, cl_mem d_mat,
+                 cl_int nrows, cl_int ncols, int n_wait_events,
+                 cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
@@ -27,8 +30,6 @@ cl_event matinit(cl_command_queue que, cl_kernel matinit_k,
     err = clSetKernelArg(matinit_k, arg++, sizeof(ncols), &ncols);
     ocl_check(err, "set matinit arg %d", arg - 1);
 
-    // scelta manuale del work-group size (lws):
-    // gws deve essere multiplo di lws in ogni direzione
     const size_t lws[] = { 32, 8 };
     const size_t gws[] = {
         round_mul_up(ncols, lws[0]), //nel kernel get_global_id(0) è l'indice c
@@ -36,19 +37,16 @@ cl_event matinit(cl_command_queue que, cl_kernel matinit_k,
     };
 
     cl_event evt_init;
-    err = clEnqueueNDRangeKernel(
-        que, matinit_k,
-        2, NULL, gws, lws,
-        n_wait_events, wait_events, &evt_init);
+    err = clEnqueueNDRangeKernel(que, matinit_k, 2, NULL, gws, lws,
+                                 n_wait_events, wait_events, &evt_init);
     ocl_check(err, "enqueue matinit");
 
     return evt_init;
 }
 /*
-cl_event product(cl_command_queue que, cl_kernel prod_k,
-    cl_mem d_v1, cl_mem d_v2, cl_mem d_v2,
-    cl_int nrows, cl_int ncols, // dell'input
-    int n_wait_events, cl_event *wait_events)
+cl_event product(cl_command_queue que, cl_kernel prod_k, cl_mem d_v1,
+                 cl_mem d_v2, cl_mem d_v3, cl_int nrows, cl_int ncols, // dell'input
+                 int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
@@ -56,15 +54,13 @@ cl_event product(cl_command_queue que, cl_kernel prod_k,
     ocl_check(err, "set prod arg %d", arg - 1);
     err = clSetKernelArg(prod_k, arg++, sizeof(d_v2), &d_v2);
     ocl_check(err, "set prod arg %d", arg - 1);
-    err = clSetKernelArg(prod_k, arg++, sizeof(d_v2), &d_v2);
+    err = clSetKernelArg(prod_k, arg++, sizeof(d_v3), &d_v3);
     ocl_check(err, "set prod arg %d", arg - 1);
     err = clSetKernelArg(prod_k, arg++, sizeof(nrows), &nrows);
     ocl_check(err, "set prod arg %d", arg - 1);
     err = clSetKernelArg(prod_k, arg++, sizeof(ncols), &ncols);
     ocl_check(err, "set prod arg %d", arg - 1);
 
-    // scelta manuale del work-group size:
-    // gws deve essere multiplo di lws in ogni direzione
     const size_t lws[] = { 32, 8 };
     const size_t gws[] = {
         round_mul_up(ncols, lws[0]),
@@ -72,10 +68,8 @@ cl_event product(cl_command_queue que, cl_kernel prod_k,
     };
 
     cl_event evt_prod;
-    err = clEnqueueNDRangeKernel(
-        que, prod_k,
-        2, NULL, gws, lws,
-        n_wait_events, wait_events, &evt_prod);
+    err = clEnqueueNDRangeKernel(que, prod_k, 2, NULL, gws, lws,
+                                 n_wait_events, wait_events, &evt_prod);
     ocl_check(err, "enqueue prod");
 
     return evt_prod;
@@ -107,7 +101,8 @@ cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img, cl_mem d_d
     };
 
     cl_event evt_fft;
-    err = clEnqueueNDRangeKernel(que, fft_k, 2, NULL, gws, lws, n_wait_events, wait_events, &evt_fft);
+    err = clEnqueueNDRangeKernel(que, fft_k, 2, NULL, gws, lws, n_wait_events,
+                                 wait_events, &evt_fft);
     ocl_check(err, "enqueue fft");
 
     return evt_fft;
@@ -124,7 +119,7 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_o
     ocl_check(err, "set somma arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(d_output), &d_output);
     ocl_check(err, "set somma arg %d", arg-1);
-    err = clSetKernelArg(somma_k, arg++, _lws*sizeof(cl_double2), NULL);
+    err = clSetKernelArg(somma_k, arg++, _lws*sizeof(complex_t), NULL);
     ocl_check(err, "set vecsum arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(numels), &numels);
     ocl_check(err, "set somma arg %d", arg-1);
@@ -170,13 +165,13 @@ int main(int argc, char *argv[])
     const size_t nwg = atoi(argv[4]);
 
     const int numels = nrows*ncols;
-    const size_t memsize = numels*sizeof(cl_int);
-    const size_t memsize_complex = numels*sizeof(cl_double2);
+    const size_t memsize = numels*sizeof(int);
+    const size_t memsize_complex = numels*sizeof(complex_t);
 
     if (nrows <= 0 || ncols <= 0)
         error("nrows, ncols devono essere positivi");
     if (numels & (numels-1))
-            error("numels deve essere una potenza di due");
+        error("numels deve essere una potenza di due");
 
     cl_platform_id p = select_platform();
     cl_device_id d = select_device(p);
@@ -196,7 +191,7 @@ int main(int argc, char *argv[])
     ocl_check(err, "create kernel somma");
 
     const size_t gws0 = nwg*lws0;
-    size_t memsize_min = gws0*sizeof(cl_double2);
+    size_t memsize_min = gws0*sizeof(complex_t);
 
     /* Allocazione buffer */
     cl_mem d_v1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
@@ -247,14 +242,14 @@ int main(int argc, char *argv[])
 
             if(u==(nrows/2)-1 && v==ncols-1)
                 memcpy(&evt_end, &evt_sum[nsums+1], sizeof(cl_event));
-
+                
             err = clFinish(que);
             ocl_check(err, "clFinish");
 
             //Estrazione risultato
-            cl_double2 *res = malloc(2*sizeof(cl_double2));
+            complex_t *res = malloc(2*sizeof(complex_t));
             err = clEnqueueReadBuffer(que, d_vsum, CL_TRUE, 0,
-                                      2*sizeof(cl_double2), res, 0, NULL, NULL);
+                                      2*sizeof(complex_t), res, 0, NULL, NULL);
             ocl_check(err, "read buffer vsum");
             res_fft[u][v].real = res[0].s[0];
             res_fft[u][v].imag = res[0].s[1];
@@ -263,7 +258,7 @@ int main(int argc, char *argv[])
         }
 
     printf("totale: %gms\t%gGB/s\n", total_runtime_ms(evt_start, evt_end),
-           ((2.0*memsize_complex*memsize_complex)/total_runtime_ns(evt_start, evt_end)));
+           ((2.0*memsize_complex*numels)/total_runtime_ns(evt_start, evt_end)));
 
     verify(res_fft, nrows, ncols);
 
