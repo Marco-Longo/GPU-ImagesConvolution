@@ -148,7 +148,7 @@ void verify(complex** reale, int nrows, int ncols)
         {
             if((atteso[x][y].real-reale[x][y].real)>1.0e-7 ||
                (atteso[x][y].imag-reale[x][y].imag)>1.0e-7)
-                  fprintf(stderr, "mismatch@ %d %d: %f+%fi != %f+%fi\n", x, y,
+                  fprintf(stderr, "mismatch@ %d %d: %.9g+%.9gi != %.9g+%.9gi\n", x, y,
                           reale[x][y].real, reale[x][y].imag, atteso[x][y].real,
                           atteso[x][y].imag);
         }
@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
     cl_kernel matinit_k = clCreateKernel(prog, "matinit", &err);
     ocl_check(err, "create kernel matinit");
 
-    cl_kernel fft_k = clCreateKernel(prog, "fftx2", &err);
+    cl_kernel fft_k = clCreateKernel(prog, "fftx4", &err);
     ocl_check(err, "create kernel fft");
 
     cl_kernel somma_k = clCreateKernel(prog, "somma_lmem", &err);
@@ -198,10 +198,10 @@ int main(int argc, char *argv[])
                                  memsize, NULL, &err);
     ocl_check(err, "create buffer v1");
     cl_mem d_v2 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                 memsize_complex > memsize_min ? 2*memsize_complex : 2*memsize_min, NULL, &err);
+                                 memsize_complex > memsize_min ? 4*memsize_complex : 4*memsize_min, NULL, &err);
     ocl_check(err, "create buffer v2");
     cl_mem d_vsum = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                   2*memsize_min, NULL, &err);
+                                   4*memsize_min, NULL, &err);
     ocl_check(err, "create buffer sum");
 
     complex **res_fft = init_complex(nrows, ncols);
@@ -212,7 +212,7 @@ int main(int argc, char *argv[])
     //Trasformata
     cl_event evt_start, evt_end;
 
-    for(int u=0; u<nrows/2; ++u)
+    for(int u=0; u<nrows/4; ++u)
         for(int v=0; v<ncols; ++v)
         {
             cl_event evt_fft = fft(que, fft_k, d_v1, d_v2, u, v,
@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
             //RIDUZIONE
             size_t nsums = (nwg == 1 ? 1 : 2);
             const size_t lws_final = 32;
-            cl_event evt_sum[4];
+            cl_event evt_sum[8];
 
             //Prima chiamata (offset 0)
             evt_sum[0] = sum(que, somma_k, d_v2, d_vsum, numels, 0,
@@ -232,29 +232,42 @@ int main(int argc, char *argv[])
                 evt_sum[1] = sum(que, somma_k, d_vsum, d_vsum, nwg, 0,
                                  lws_final, lws_final, 1, evt_sum);
 
+            // //Seconda chiamata (offset numels / nwg)
+            // evt_sum[2] = sum(que, somma_k, d_v2, d_vsum, numels, numels,
+            //                  lws0, gws0, 1, (evt_sum + nsums -1));
+            // if(nwg > 1)
+            //     evt_sum[3] = sum(que, somma_k, d_vsum, d_vsum, nwg, nwg,
+            //                      lws_final, lws_final, 1, evt_sum+2);
 
-            //Seconda chiamata (offset numels / nwg)
-            evt_sum[2] = sum(que, somma_k, d_v2, d_vsum, numels, numels,
-                             lws0, gws0, 1, (evt_sum + nsums -1));
-            if(nwg > 1)
-                evt_sum[3] = sum(que, somma_k, d_vsum, d_vsum, nwg, nwg,
-                                 lws_final, lws_final, 1, evt_sum+2);
+            for(int h=1; h<4; ++h)
+            {
+                evt_sum[2*h] = sum(que, somma_k, d_v2, d_vsum, numels, h,
+                                   lws0, gws0, 0, NULL);
+                if(nwg > 1)
+                    evt_sum[2*h+1] = sum(que, somma_k, d_vsum, d_vsum, nwg, h,
+                                         lws_final, lws_final, 1, evt_sum+2*h);
+            }
 
-            if(u==(nrows/2)-1 && v==ncols-1)
-                memcpy(&evt_end, &evt_sum[nsums+1], sizeof(cl_event));
-                
+
+            if(u==(nrows/4)-1 && v==ncols-1)
+                memcpy(&evt_end, &evt_sum[nsums+5], sizeof(cl_event));
+
             err = clFinish(que);
             ocl_check(err, "clFinish");
 
             //Estrazione risultato
-            complex_t *res = malloc(2*sizeof(complex_t));
+            complex_t *res = malloc(4*sizeof(complex_t));
             err = clEnqueueReadBuffer(que, d_vsum, CL_TRUE, 0,
-                                      2*sizeof(complex_t), res, 0, NULL, NULL);
+                                      4*sizeof(complex_t), res, 0, NULL, NULL);
             ocl_check(err, "read buffer vsum");
             res_fft[u][v].real = res[0].s[0];
             res_fft[u][v].imag = res[0].s[1];
-            res_fft[u+(nrows/2)][v].real = res[1].s[0];
-            res_fft[u+(nrows/2)][v].imag = res[1].s[1];
+            res_fft[u+(nrows/4)][v].real = res[1].s[0];
+            res_fft[u+(nrows/4)][v].imag = res[1].s[1];
+            res_fft[u+(nrows/2)][v].real = res[2].s[0];
+            res_fft[u+(nrows/2)][v].imag = res[2].s[1];
+            res_fft[u+(nrows*3/4)][v].real = res[3].s[0];
+            res_fft[u+(nrows*3/4)][v].imag = res[3].s[1];
         }
 
     printf("totale: %gms\t%gGB/s\n", total_runtime_ms(evt_start, evt_end),

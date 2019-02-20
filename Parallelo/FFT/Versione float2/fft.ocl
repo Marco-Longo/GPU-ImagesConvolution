@@ -94,6 +94,36 @@ kernel void fftx2(global int* restrict src, global complex* restrict dest, //all
     dest[(row+nrows)*ncols+col] = (complex)(val*cos(r2), -sin(r2)*val);
 }
 
+kernel void fftx4(global int* restrict src, global complex* restrict dest, //allocata come 4*memsize
+                  int u, int v, int nrows, int ncols)
+{
+#if 1
+    const int col = get_global_id(0);
+    const int row = get_global_id(1);
+#else
+    const int row = get_global_id(0);
+    const int col = get_global_id(1);
+#endif
+
+    if(col >= ncols || row >= nrows)
+        return;
+
+    int val = src[row*ncols+col];
+
+    complex2 r = (complex2)(
+                            (((u*row)/(real)nrows) + ((v*col)/(real)ncols)),
+                            ((((u+(nrows/4))*row)/(real)nrows) + ((v*col)/(real)ncols)),
+                            ((((u+(nrows/2))*row)/(real)nrows) + ((v*col)/(real)ncols)),
+                            ((((u+(nrows*3/4))*row)/(real)nrows) + ((v*col)/(real)ncols))
+                           );
+    r *= _2PI;
+
+    dest[row*ncols+col] = (complex)(val*cos(r.x), -sin(r.x)*val);
+    dest[(row+nrows)*ncols+col] = (complex)(val*cos(r.y), -sin(r.y)*val);
+    dest[(row+2*nrows)*ncols+col] = (complex)(val*cos(r.z), -sin(r.z)*val);
+    dest[(row+3*nrows)*ncols+col] = (complex)(val*cos(r.w), -sin(r.w)*val);
+}
+
 kernel void somma(global complex* restrict input,
                   global complex* restrict output, int numels)
 {
@@ -166,8 +196,8 @@ kernel void somma_lmem(global complex* restrict input, global complex* restrict 
 
     for(int i = 0; i < el_per_wi; ++i)
     {
-        int idx_r = gws*i + idx + offset;
-        if(idx_r >= (numels+offset))
+        int idx_r = gws*i + idx + (offset*numels);
+        if(idx_r >= ((offset+1)*numels))
             break;
         acc.x += input[idx_r].x;
         acc.y += input[idx_r].y;
@@ -175,7 +205,7 @@ kernel void somma_lmem(global complex* restrict input, global complex* restrict 
 
     int lidx = get_local_id(0);
     int lws = get_local_size(0);
-    int nwg = gws/lws;
+    int slide = (gws*offset)/lws;
 
     lmem[lidx] = (complex)(acc.x, acc.y);
 
@@ -193,12 +223,7 @@ kernel void somma_lmem(global complex* restrict input, global complex* restrict 
     }
 
     if(lidx == 0)
-    {
-        if(offset == 0)
-            output[get_group_id(0)] = (complex)(acc.x, acc.y);
-        else
-            output[get_group_id(0)+nwg] = (complex)(acc.x, acc.y);
-    }
+        output[get_group_id(0)+slide] = (complex)(acc.x, acc.y);
 }
 
 kernel void somma_lmem2(global complex2* restrict input, global complex* restrict output,
