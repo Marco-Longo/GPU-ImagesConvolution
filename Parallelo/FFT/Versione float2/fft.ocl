@@ -186,44 +186,46 @@ kernel void somma_x4(global complex4* restrict input,
 }
 
 kernel void somma_lmem(global complex* restrict input, global complex* restrict output,
-                       local complex* restrict lmem, int numels, int offset)
+                       local complex* restrict lmem, int numels)
 {
     const int gws = get_global_size(0);
     const int el_per_wi = (numels + gws - 1)/gws;
-
     int idx = get_global_id(0);
-    complex acc = (complex)(0, 0);
 
-    for(int i = 0; i < el_per_wi; ++i)
+    for(int offset=0; offset<4; ++offset)
     {
-        int idx_r = gws*i + idx + (offset*numels);
-        if(idx_r >= ((offset+1)*numels))
-            break;
-        acc.x += input[idx_r].x;
-        acc.y += input[idx_r].y;
-    }
-
-    int lidx = get_local_id(0);
-    int lws = get_local_size(0);
-    int slide = (gws*offset)/lws;
-
-    lmem[lidx] = (complex)(acc.x, acc.y);
-
-    for(int attivi = lws/2; attivi >= 1; attivi /= 2)
-    {
-        barrier(CLK_LOCAL_MEM_FENCE);
-
-        if(lidx < attivi)
+        complex acc = (complex)(0, 0);
+        for(int i = 0; i < el_per_wi; ++i)
         {
-            acc.x += lmem[lidx+attivi].x;
-            acc.y += lmem[lidx+attivi].y;
-
-            lmem[lidx] = (complex)(acc.x, acc.y);
+            int idx_r = gws*i + idx + (offset*numels);
+            if(idx_r >= ((offset+1)*numels))
+                break;
+            acc.x += input[idx_r].x;
+            acc.y += input[idx_r].y;
         }
-    }
 
-    if(lidx == 0)
-        output[get_group_id(0)+slide] = (complex)(acc.x, acc.y);
+        int lidx = get_local_id(0);
+        int lws = get_local_size(0);
+        int slide = (gws*offset)/lws;
+
+        lmem[lidx] = (complex)(acc.x, acc.y);
+
+        for(int attivi = lws/2; attivi >= 1; attivi /= 2)
+        {
+            barrier(CLK_LOCAL_MEM_FENCE);
+
+            if(lidx < attivi)
+            {
+                acc.x += lmem[lidx+attivi].x;
+                acc.y += lmem[lidx+attivi].y;
+
+                lmem[lidx] = (complex)(acc.x, acc.y);
+            }
+        }
+
+        if(lidx == 0)
+            output[get_group_id(0)+slide] = (complex)(acc.x, acc.y);
+    }
 }
 
 kernel void somma_lmem2(global complex2* restrict input, global complex* restrict output,

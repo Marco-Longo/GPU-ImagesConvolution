@@ -109,7 +109,7 @@ cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img, cl_mem d_d
 }
 
 cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_output,
-             cl_int numels, cl_int offset, size_t _lws, size_t _gws,
+             cl_int numels, size_t _lws, size_t _gws,
              int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
@@ -122,8 +122,6 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input, cl_mem d_o
     err = clSetKernelArg(somma_k, arg++, _lws*sizeof(complex_t), NULL);
     ocl_check(err, "set vecsum arg %d", arg-1);
     err = clSetKernelArg(somma_k, arg++, sizeof(numels), &numels);
-    ocl_check(err, "set somma arg %d", arg-1);
-    err = clSetKernelArg(somma_k, arg++, sizeof(offset), &offset);
     ocl_check(err, "set somma arg %d", arg-1);
 
     const size_t lws[] = { _lws };
@@ -146,8 +144,8 @@ void verify(complex** reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
         {
-            if((atteso[x][y].real-reale[x][y].real)>1.0e-7 ||
-               (atteso[x][y].imag-reale[x][y].imag)>1.0e-7)
+            if((atteso[x][y].real-reale[x][y].real)>1.0e-8 ||
+               (atteso[x][y].imag-reale[x][y].imag)>1.0e-8)
                   fprintf(stderr, "mismatch@ %d %d: %.9g+%.9gi != %.9g+%.9gi\n", x, y,
                           reale[x][y].real, reale[x][y].imag, atteso[x][y].real,
                           atteso[x][y].imag);
@@ -201,7 +199,7 @@ int main(int argc, char *argv[])
                                  memsize_complex > memsize_min ? 4*memsize_complex : 4*memsize_min, NULL, &err);
     ocl_check(err, "create buffer v2");
     cl_mem d_vsum = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                                   4*memsize_min, NULL, &err);
+                                   4*nwg*sizeof(complex_t), NULL, &err);
     ocl_check(err, "create buffer sum");
 
     complex **res_fft = init_complex(nrows, ncols);
@@ -223,34 +221,16 @@ int main(int argc, char *argv[])
             //RIDUZIONE
             size_t nsums = (nwg == 1 ? 1 : 2);
             const size_t lws_final = 32;
-            cl_event evt_sum[8];
+            cl_event evt_sum[2];
 
-            //Prima chiamata (offset 0)
-            evt_sum[0] = sum(que, somma_k, d_v2, d_vsum, numels, 0,
+            evt_sum[0] = sum(que, somma_k, d_v2, d_vsum, numels,
                              lws0, gws0, 1, &evt_fft);
             if(nwg > 1)
-                evt_sum[1] = sum(que, somma_k, d_vsum, d_vsum, nwg, 0,
+                evt_sum[1] = sum(que, somma_k, d_vsum, d_vsum, nwg,
                                  lws_final, lws_final, 1, evt_sum);
 
-            // //Seconda chiamata (offset numels / nwg)
-            // evt_sum[2] = sum(que, somma_k, d_v2, d_vsum, numels, numels,
-            //                  lws0, gws0, 1, (evt_sum + nsums -1));
-            // if(nwg > 1)
-            //     evt_sum[3] = sum(que, somma_k, d_vsum, d_vsum, nwg, nwg,
-            //                      lws_final, lws_final, 1, evt_sum+2);
-
-            for(int h=1; h<4; ++h)
-            {
-                evt_sum[2*h] = sum(que, somma_k, d_v2, d_vsum, numels, h,
-                                   lws0, gws0, 0, NULL);
-                if(nwg > 1)
-                    evt_sum[2*h+1] = sum(que, somma_k, d_vsum, d_vsum, nwg, h,
-                                         lws_final, lws_final, 1, evt_sum+2*h);
-            }
-
-
             if(u==(nrows/4)-1 && v==ncols-1)
-                memcpy(&evt_end, &evt_sum[nsums+5], sizeof(cl_event));
+                memcpy(&evt_end, &evt_sum[nsums-1], sizeof(cl_event));
 
             err = clFinish(que);
             ocl_check(err, "clFinish");
