@@ -124,29 +124,30 @@ cl_event product(cl_command_queue que, cl_kernel prod_k, cl_mem d_v1,
 }
 */
 cl_event fft(cl_command_queue que, cl_kernel fft_k, cl_mem d_src_img,
-             cl_mem d_dest_img, int nrows, int ncols,
+             cl_mem d_dest_img, int nrows, int ncols, int _lws, int _gws,
              int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
+    int nwg = _gws/_lws;
+    size_t lmem_dim = (((nrows*ncols) + nwg - 1)/nwg) * _lws * sizeof(complex);
 
     err = clSetKernelArg(fft_k, arg++, sizeof(d_src_img), &d_src_img);
     ocl_check(err, "set fft arg %d", arg - 1);
     err = clSetKernelArg(fft_k, arg++, sizeof(d_dest_img), &d_dest_img);
     ocl_check(err, "set fft arg %d", arg - 1);
+    err = clSetKernelArg(fft_k, arg++, lmem_dim, NULL);
+    ocl_check(err, "set fft arg %d", arg-1);
     err = clSetKernelArg(fft_k, arg++, sizeof(nrows), &nrows);
     ocl_check(err, "set fft arg %d", arg - 1);
     err = clSetKernelArg(fft_k, arg++, sizeof(ncols), &ncols);
     ocl_check(err, "set fft arg %d", arg - 1);
 
-    const size_t lws[] = {16, 16};
-    const size_t gws[] = {
-        round_mul_up(nrows, lws[0]),
-        round_mul_up(ncols, lws[1]),
-    };
+    const size_t lws[] = { _lws };
+    const size_t gws[] = { _gws };
 
     cl_event evt_fft;
-    err = clEnqueueNDRangeKernel(que, fft_k, 2, NULL, gws, lws, n_wait_events,
+    err = clEnqueueNDRangeKernel(que, fft_k, 1, NULL, gws, lws, n_wait_events,
                                  wait_events, &evt_fft);
     ocl_check(err, "enqueue fft");
 
@@ -181,7 +182,7 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input,
     return evt_sum;
 }
 
-void verify(complex* reale, int nrows, int ncols)
+void verify(complex** reale, int nrows, int ncols)
 {
     int** input = init(nrows, ncols);
     complex** atteso = fft_c(input, nrows, ncols);
@@ -189,17 +190,17 @@ void verify(complex* reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
       for (int y = 0; y < ncols; ++y)
       {
-        if( ((fabs(atteso[x][y].s[0]-reale[x*ncols+y].s[0])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[0]))) ||
-            ((fabs(atteso[x][y].s[1]-reale[x*ncols+y].s[1])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[1]))) )
+        if( ((fabs(atteso[x][y].s[0]-reale[x][y].s[0])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[0]))) ||
+            ((fabs(atteso[x][y].s[1]-reale[x][y].s[1])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[1]))) )
         {
           fprintf(stderr, "mismatch@ %d %d: %.9g+%.9gi != %.9g+%.9gi\n",
-                  x, y, reale[x*ncols+y].s[0], reale[x*ncols+y].s[1], atteso[x][y].s[0],
+                  x, y, reale[x][y].s[0], reale[x][y].s[1], atteso[x][y].s[0],
                   atteso[x][y].s[1]);
         }
       }
 }
 */
-void verify(complex* reale, int nrows, int ncols)
+void verify(complex** reale, int nrows, int ncols)
 {
     int** input = init(nrows, ncols);
     complex** atteso = fft_c(input, nrows, ncols);
@@ -207,23 +208,23 @@ void verify(complex* reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
         {
-            if((atteso[x][y].s[0]-reale[x*ncols+y].s[0])>1.0e-8 ||
-               (atteso[x][y].s[1]-reale[x*ncols+y].s[1])>1.0e-8)
+            if((atteso[x][y].s[0]-reale[x][y].s[0])>1.0e-8 ||
+               (atteso[x][y].s[1]-reale[x][y].s[1])>1.0e-8)
                   fprintf(stderr, "mismatch@ %d %d: %.9g+%.9gi != %.9g+%.9gi\n", x, y,
-                          reale[x*ncols+y].s[0], reale[x*ncols+y].s[1], atteso[x][y].s[0],
+                          reale[x][y].s[0], reale[x][y].s[1], atteso[x][y].s[0],
                           atteso[x][y].s[1]);
         }
 }
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
-        error("sintassi: product nrows ncols");
+    if (argc != 5)
+        error("sintassi: product nrows ncols lws nwg");
 
     const int nrows = atoi(argv[1]);
     const int ncols = atoi(argv[2]);
-    //const size_t lws0 = atoi(argv[3]);
-    //const size_t nwg = atoi(argv[4]);
+    const size_t lws0 = atoi(argv[3]);
+    const size_t nwg = atoi(argv[4]);
 
     const int numels = nrows*ncols;
     const size_t memsize = numels*sizeof(int);
@@ -245,13 +246,13 @@ int main(int argc, char *argv[])
     cl_kernel matinit_k = clCreateKernel(prog, "matinit", &err);
     ocl_check(err, "create kernel matinit");
 
-    cl_kernel fft_k = clCreateKernel(prog, "fft", &err);
+    cl_kernel fft_k = clCreateKernel(prog, "fft_lmem", &err);
     ocl_check(err, "create kernel fft");
 
     //cl_kernel somma_k = clCreateKernel(prog, "somma_lmem", &err);
     //ocl_check(err, "create kernel somma");
 
-    //const size_t gws0 = nwg*lws0;
+    const size_t gws0 = nwg*lws0;
     //size_t memsize_min = gws0*sizeof(complex);
 
     /* Allocazione buffer */
@@ -265,25 +266,33 @@ int main(int argc, char *argv[])
     //                               memsize_min, NULL, &err);
     //ocl_check(err, "create buffer sum");
 
+    complex **res_fft = init_complex(nrows, ncols);
+
+
     //Inizializzazione
     cl_event evt_init = matinit(que, matinit_k, d_v1, nrows, ncols, 0, NULL);
 
     //Trasformata
-    cl_event evt_fft = fft(que, fft_k, d_v1, d_v2, nrows, ncols, 1, &evt_init);
+    cl_event evt_fft = fft(que, fft_k, d_v1, d_v2, nrows, ncols, lws0, gws0,
+                           1, &evt_init);
 
     err = clFinish(que);
     ocl_check(err, "clFinish");
 
     //Estrazione risultato
-    complex *res_fft = malloc(memsize_complex);
-    cl_event evt_read;
+    complex *res = malloc(memsize_complex);
     err = clEnqueueReadBuffer(que, d_v2, CL_TRUE, 0,
-                              memsize_complex, res_fft, 0, NULL, &evt_read);
+                              memsize_complex, res, 0, NULL, NULL);
 
-    printf("fft: %gms\t%gGB/s\n", runtime_ms(evt_fft),
+    for(int u=0; u<nrows; ++u)
+        for(int v=0; v<ncols; ++v)
+        {
+            res_fft[u][v].s[0] = res[u*ncols+v].s[0];
+            res_fft[u][v].s[1] = res[u*ncols+v].s[1];
+        }
+
+    printf("totale: %gms\t%gGB/s\n", runtime_ms(evt_fft),
            ((memsize_complex*(numels+1.0))/runtime_ns(evt_fft)));
-    printf("read: %gms\t%gGB/s\n", runtime_ms(evt_read),
-           (1.0*memsize_complex)/runtime_ns(evt_read));
 
     //verify(res_fft, nrows, ncols);
 

@@ -1,8 +1,8 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
-typedef double  real;
-typedef double2 complex;
-typedef double4 complex2;
-typedef double8 complex4;
+typedef float  real;
+typedef float2 complex;
+typedef float4 complex2;
+typedef float8 complex4;
 
 #define _2PI 6.283185307179586476925f
 
@@ -84,49 +84,62 @@ kernel void fft4(global int4* restrict src, global complex* restrict dest,
 }
 
 kernel void fft_lmem(global int* restrict src, global complex* restrict dest,
-                     local complex* restrict lmem, int nrows, int ncols, int iter)
+                     local complex* restrict lmem, int nrows, int ncols)
 {
     int gidx = get_group_id(0);
-    int lws = get_local_size(0);
-    int nwg = get_global_size(0)/lws;
-    int u = (iter*nwg+gidx)/ncols;    //i=iter*nwg+gidx
-    int v = (iter*nwg+gidx)-(u*ncols);
-
-    if(u >= nrows || v >= ncols)
-        return;
-    complex acc = (complex)(0, 0);
-    int numels = nrows*ncols;
-    int el_per_wi = (numels + lws - 1)/lws;
     int lidx = get_local_id(0);
+    const int lws = get_local_size(0);
+    const int nwg = get_global_size(0)/lws;
+    const int numels = nrows*ncols;
 
-    for(int i=0; i<el_per_wi; ++i)
+    const int niters = (numels + nwg - 1)/nwg;
+    for(int h = 0; h < niters; ++h)
     {
-        //lws 8  el_per_wi 2 i=0 ncols=4
-        int m = i*lws+lidx; //0 8
-        int row = m/ncols; //0 2
-        int col = m - (u*ncols); //0 0
+      int i = gidx + h*nwg; //work-group linear index
+      int u = i/ncols;
+      int v = i - (u*ncols);
+
+      if(u >= nrows || v >= ncols)
+          break;
+
+      int el_per_wi = (numels + lws - 1)/lws;
+      complex acc = (complex)(0, 0);
+      for(int k = 0; k < el_per_wi; ++k)
+      {
+        int j = lidx + k*el_per_wi;
+        int row = j/ncols;
+        int col = j - (row*ncols);
 
         int val = src[row*ncols+col];
         real r = _2PI * (((u*row)/(real)nrows) + ((v*col)/(real)ncols));
         acc += (complex)(val*cos(r), -sin(r)*val);
+      }
+
+      //dim local memory = niters * lws * sizeof()
+      lmem[lidx + h*lws] = (complex)(acc.x, acc.y);
     }
 
-    lmem[lidx] = (complex)(acc.x, acc.y);
-    barrier(CLK_LOCAL_MEM_FENCE);
-
+    //barrier
+    //riduzione in local memory
+    //int local_numels = niters*lws;
     for(int attivi = lws/2; attivi >= 1; attivi /= 2)
     {
-        barrier(CLK_LOCAL_MEM_FENCE);
-
+      barrier(CLK_LOCAL_MEM_FENCE);
+      for(int i = 0; i < niters; ++i)
+      {
         if(lidx < attivi)
         {
-            acc += lmem[lidx+attivi];
-            lmem[lidx] = (complex)(acc.x, acc.y);
+          int idx_r = lidx + lws*i;
+          lmem[idx_r] += lmem[idx_r + attivi];
         }
+      }
     }
 
     if(lidx == 0)
-        dest[u*ncols+v] = (complex)(acc.x, acc.y);
+    {
+      for(int i = 0; i < niters; ++i)
+        dest[gidx + i*nwg] = lmem[i*lws];
+    }
 }
 
 kernel void somma_lmem(global complex* restrict input, global complex* restrict output,
