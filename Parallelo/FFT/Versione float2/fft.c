@@ -7,8 +7,8 @@
 #include <float.h>
 
 #define _2PI 6.283185307179586476925f
-typedef cl_float2 complex;
-typedef float     complex_t;
+typedef cl_double2 complex;
+typedef double     complex_t;
 
 //CODICE SEQUENZIALE
 int ** init(int M, int N)
@@ -44,10 +44,12 @@ complex ** fft_c(int **f, int M, int N)
   for(int u=0; u<M; u++)
     for(int v=0; v<N; v++)
     {
+      const complex_t row_coeff = u/(complex_t)M;
+      const complex_t col_coeff = v/(complex_t)N;
       for(int x=0; x<M; x++)
         for(int y=0; y<N; y++)
         {
-          complex_t r = _2PI * (((u*x)/(complex_t)M) + ((v*y)/(complex_t)N));
+          complex_t r = _2PI * ((x*row_coeff) + (y*col_coeff));
 
           F[u][v].s[0] += cos(r)*f[x][y];
           F[u][v].s[1] += -sin(r)*f[x][y];
@@ -274,23 +276,27 @@ int main(int argc, char *argv[])
     err = clFinish(que);
     ocl_check(err, "clFinish");
 
-    //Estrazione risultato
-    complex *res_fft = malloc(memsize_complex);
-    cl_event evt_read;
-    err = clEnqueueReadBuffer(que, d_v2, CL_TRUE, 0,
-                              memsize_complex, res_fft, 0, NULL, &evt_read);
-
     printf("fft: %gms\t%gGB/s\n", runtime_ms(evt_fft),
            ((memsize_complex*(numels+1.0))/runtime_ns(evt_fft)));
-    printf("read: %gms\t%gGB/s\n", runtime_ms(evt_read),
-           (1.0*memsize_complex)/runtime_ns(evt_read));
 
-    //verify(res_fft, nrows, ncols);
+    //Estrazione risultato
+    cl_event evt_map, evt_unmap;
+		complex *res_fft = clEnqueueMapBuffer(que, d_v2,	CL_TRUE, CL_MAP_READ,
+			                           0, memsize_complex, 0, NULL, &evt_map, &err);
+		ocl_check(err, "map buffer v2");
+		printf("map: %gms\t%gGB/s\n", runtime_ms(evt_map),
+			     (1.0*memsize_complex)/runtime_ns(evt_map));
+		verify(res_fft, nrows, ncols);
+		err = clEnqueueUnmapMemObject(que, d_v2, res_fft, 0, NULL, &evt_unmap);
+		ocl_check(err, "unmap buffer vsum");
+		clFinish(que);
+		printf("unmap: %gms\t%gGB/s\n", runtime_ms(evt_unmap),
+			     (1.0*memsize_complex)/runtime_ns(evt_unmap));
+
 
     clReleaseMemObject(d_v1);
     clReleaseMemObject(d_v2);
     //clReleaseMemObject(d_vsum);
-    free(res_fft);
 
     clReleaseKernel(matinit_k);
     clReleaseKernel(fft_k);

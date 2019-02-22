@@ -1,8 +1,8 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
-typedef float  real;
-typedef float2 complex;
-typedef float4 complex2;
-typedef float8 complex4;
+typedef double  real;
+typedef double2 complex;
+typedef double4 complex2;
+typedef double8 complex4;
 
 #define _2PI 6.283185307179586476925f
 
@@ -36,12 +36,14 @@ kernel void fft(global int* restrict src, global complex* restrict dest,
     if(v >= ncols || u >= nrows)
         return;
     complex acc = (complex)(0, 0);
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
 
     for(int row=0; row<nrows; ++row)
         for(int col=0; col<ncols; ++col)
         {
             int val = src[row*ncols+col];
-            real r = _2PI * (((u*row)/(real)nrows) + ((v*col)/(real)ncols));
+            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
 
             acc += (complex)(val*cos(r), -sin(r)*val);
         }
@@ -62,16 +64,18 @@ kernel void fft4(global int4* restrict src, global complex* restrict dest,
     if(v >= ncols || u >= nrows)
         return;
     complex acc = (complex)(0, 0);
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
 
     for(int row=0; row<nrows; ++row)
         for(int col=0; col<ncols/4; ++col)
         {
             int4 val = src[row*ncols/4+col];
             complex2 r = (complex2)(
-                                    (((u*row)/(real)nrows) + ((v*(4*col+0))/(real)ncols)),
-                                    (((u*row)/(real)nrows) + ((v*(4*col+1))/(real)ncols)),
-                                    (((u*row)/(real)nrows) + ((v*(4*col+2))/(real)ncols)),
-                                    (((u*row)/(real)nrows) + ((v*(4*col+3))/(real)ncols))
+                                    (row*row_coeff) + ((4*col+0)*col_coeff),
+                                    (row*row_coeff) + ((4*col+1)*col_coeff),
+                                    (row*row_coeff) + ((4*col+2)*col_coeff),
+                                    (row*row_coeff) + ((4*col+3)*col_coeff)
                                    );
             r *= _2PI;
 
@@ -104,6 +108,9 @@ kernel void fft_lmem(global int* restrict src, global complex* restrict dest,
 
       int el_per_wi = (numels + lws - 1)/lws;
       complex acc = (complex)(0, 0);
+      const real row_coeff = u/(real)nrows;
+      const real col_coeff = v/(real)ncols;
+
       for(int k = 0; k < el_per_wi; ++k)
       {
         int j = lidx + k*el_per_wi;
@@ -111,7 +118,7 @@ kernel void fft_lmem(global int* restrict src, global complex* restrict dest,
         int col = j - (row*ncols);
 
         int val = src[row*ncols+col];
-        real r = _2PI * (((u*row)/(real)nrows) + ((v*col)/(real)ncols));
+        real r = _2PI * ((row*row_coeff) + (col*col_coeff));
         acc += (complex)(val*cos(r), -sin(r)*val);
       }
 
