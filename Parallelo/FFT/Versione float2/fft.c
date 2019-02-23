@@ -281,17 +281,17 @@ int main(int argc, char *argv[])
 
     //Estrazione risultato
     cl_event evt_map, evt_unmap;
-    complex *res_fft = clEnqueueMapBuffer(que, d_v2, CL_TRUE, CL_MAP_READ,
-			                  0, memsize_complex, 0, NULL, &evt_map, &err);
+    complex *res_fft = clEnqueueMapBuffer(que, d_v2,	CL_TRUE, CL_MAP_READ,
+			                         0, memsize_complex, 0, NULL, &evt_map, &err);
     ocl_check(err, "map buffer v2");
     printf("map: %gms\t%gGB/s\n", runtime_ms(evt_map),
-	   (1.0*memsize_complex)/runtime_ns(evt_map));
+           (1.0*memsize_complex)/runtime_ns(evt_map));
     verify(res_fft, nrows, ncols);
     err = clEnqueueUnmapMemObject(que, d_v2, res_fft, 0, NULL, &evt_unmap);
     ocl_check(err, "unmap buffer vsum");
     clFinish(que);
     printf("unmap: %gms\t%gGB/s\n", runtime_ms(evt_unmap),
-	   (1.0*memsize_complex)/runtime_ns(evt_unmap));
+           (1.0*memsize_complex)/runtime_ns(evt_unmap));
 
     clReleaseMemObject(d_v1);
     clReleaseMemObject(d_v2);

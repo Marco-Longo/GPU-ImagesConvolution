@@ -182,7 +182,7 @@ cl_event sum(cl_command_queue que, cl_kernel somma_k, cl_mem d_input,
     return evt_sum;
 }
 
-void verify(complex** reale, int nrows, int ncols)
+void verify(complex* reale, int nrows, int ncols)
 {
     int** input = init(nrows, ncols);
     complex** atteso = fft_c(input, nrows, ncols);
@@ -190,17 +190,17 @@ void verify(complex** reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
       for (int y = 0; y < ncols; ++y)
       {
-        if( ((fabs(atteso[x][y].s[0]-reale[x][y].s[0])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[0]))) ||
-            ((fabs(atteso[x][y].s[1]-reale[x][y].s[1])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[1]))) )
+        if( ((fabs(atteso[x][y].s[0]-reale[x*ncols+y].s[0])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[0]))) ||
+            ((fabs(atteso[x][y].s[1]-reale[x*ncols+y].s[1])) > ((2*FLT_EPSILON)*fabs(atteso[x][y].s[1]))) )
         {
           fprintf(stderr, "mismatch@ %d %d: %.9g+%.9gi != %.9g+%.9gi\n",
-                  x, y, reale[x][y].s[0], reale[x][y].s[1], atteso[x][y].s[0],
+                  x, y, reale[x*ncols+y].s[0], reale[x*ncols+y].s[1], atteso[x][y].s[0],
                   atteso[x][y].s[1]);
         }
       }
 }
 */
-void verify(complex** reale, int nrows, int ncols)
+void verify(complex* reale, int nrows, int ncols)
 {
     int** input = init(nrows, ncols);
     complex** atteso = fft_c(input, nrows, ncols);
@@ -208,10 +208,10 @@ void verify(complex** reale, int nrows, int ncols)
     for (int x = 0; x < nrows; ++x)
         for (int y = 0; y < ncols; ++y)
         {
-            if((atteso[x][y].s[0]-reale[x][y].s[0])>1.0e-8 ||
-               (atteso[x][y].s[1]-reale[x][y].s[1])>1.0e-8)
+            if((atteso[x][y].s[0]-reale[x*ncols+y].s[0])>1.0e-8 ||
+               (atteso[x][y].s[1]-reale[x*ncols+y].s[1])>1.0e-8)
                   fprintf(stderr, "mismatch@ %d %d: %.9g+%.9gi != %.9g+%.9gi\n", x, y,
-                          reale[x][y].s[0], reale[x][y].s[1], atteso[x][y].s[0],
+                          reale[x*ncols+y].s[0], reale[x*ncols+y].s[1], atteso[x][y].s[0],
                           atteso[x][y].s[1]);
         }
 }
@@ -266,9 +266,6 @@ int main(int argc, char *argv[])
     //                               memsize_min, NULL, &err);
     //ocl_check(err, "create buffer sum");
 
-    complex **res_fft = init_complex(nrows, ncols);
-
-
     //Inizializzazione
     cl_event evt_init = matinit(que, matinit_k, d_v1, nrows, ncols, 0, NULL);
 
@@ -279,27 +276,26 @@ int main(int argc, char *argv[])
     err = clFinish(que);
     ocl_check(err, "clFinish");
 
-    //Estrazione risultato
-    complex *res = malloc(memsize_complex);
-    err = clEnqueueReadBuffer(que, d_v2, CL_TRUE, 0,
-                              memsize_complex, res, 0, NULL, NULL);
-
-    for(int u=0; u<nrows; ++u)
-        for(int v=0; v<ncols; ++v)
-        {
-            res_fft[u][v].s[0] = res[u*ncols+v].s[0];
-            res_fft[u][v].s[1] = res[u*ncols+v].s[1];
-        }
-
-    printf("totale: %gms\t%gGB/s\n", runtime_ms(evt_fft),
+    printf("fft: %gms\t%gGB/s\n", runtime_ms(evt_fft),
            ((memsize_complex*(numels+1.0))/runtime_ns(evt_fft)));
 
-    //verify(res_fft, nrows, ncols);
+    //Estrazione risultato
+    cl_event evt_map, evt_unmap;
+    complex *res_fft = clEnqueueMapBuffer(que, d_v2,	CL_TRUE, CL_MAP_READ,
+			                         0, memsize_complex, 0, NULL, &evt_map, &err);
+    ocl_check(err, "map buffer v2");
+    printf("map: %gms\t%gGB/s\n", runtime_ms(evt_map),
+           (1.0*memsize_complex)/runtime_ns(evt_map));
+    verify(res_fft, nrows, ncols);
+    err = clEnqueueUnmapMemObject(que, d_v2, res_fft, 0, NULL, &evt_unmap);
+    ocl_check(err, "unmap buffer vsum");
+    clFinish(que);
+    printf("unmap: %gms\t%gGB/s\n", runtime_ms(evt_unmap),
+           (1.0*memsize_complex)/runtime_ns(evt_unmap));
 
     clReleaseMemObject(d_v1);
     clReleaseMemObject(d_v2);
     //clReleaseMemObject(d_vsum);
-    free(res_fft);
 
     clReleaseKernel(matinit_k);
     clReleaseKernel(fft_k);
