@@ -1,0 +1,90 @@
+typedef float    real;
+typedef float2   complex;
+typedef float4   complex2;
+typedef float8   complex4;
+
+kernel void matinit(global complex *out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0); //usiamo questa soluzione perchè più efficente
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    out[r*ncols+c] = (complex)(r-c, r-c+1);
+}
+
+kernel void product(global const complex* restrict v1, global const complex* restrict v2,
+                    global complex* restrict vprod, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if(c >= ncols || r >= nrows)
+        return;
+
+    //z*w = (a*c - b*d) + (a*d + b*c)*i
+    complex z = v1[r*ncols+c];
+    complex w = v2[r*ncols+c];
+    vprod[r*ncols+c] = (complex)((z.x*w.x - z.y*w.y), (z.x*w.y + z.y*w.x));
+}
+
+kernel void product4(global const complex4* restrict v1, global const complex4* restrict v2,
+                     global complex4* restrict vprod, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    const int cols = ncols/4;
+    if(c >= cols || r >= nrows)
+        return;
+
+    //z*w = (a*c - b*d) + (a*d + b*c)*i
+    complex4 z = v1[r*cols+c];
+    complex4 w = v2[r*cols+c];
+    vprod[r*cols+c] = (complex4) (
+                                   (z.s0*w.s0 - z.s1*w.s1), (z.s0*w.s1 + z.s1*w.s0),
+                                  (z.s2*w.s2 - z.s3*w.s3), (z.s2*w.s3 + z.s3*w.s2),
+                                  (z.s4*w.s4 - z.s5*w.s5), (z.s4*w.s5 + z.s5*w.s4),
+                                  (z.s6*w.s6 - z.s7*w.s7), (z.s6*w.s7 + z.s7*w.s6)
+                                 );
+}
+
+kernel void product2(global const complex2* restrict v1, global const complex2* restrict v2,
+                     global complex2* restrict vprod, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    const int cols = ncols/2;
+    if(c >= cols || r >= nrows)
+        return;
+
+    //z*w = (a*c - b*d) + (a*d + b*c)*i
+    complex2 z = v1[r*cols+c];
+    complex2 w = v2[r*cols+c];
+    vprod[r*cols+c] = (complex2) (
+                                  (z.s0*w.s0 - z.s1*w.s1), (z.s0*w.s1 + z.s1*w.s0),
+                                  (z.s2*w.s2 - z.s3*w.s3), (z.s2*w.s3 + z.s3*w.s2)
+                                 );
+}

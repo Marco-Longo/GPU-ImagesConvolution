@@ -1,77 +1,140 @@
-/*kernel void draw(image2d_t read_only src, image2d_t write_only dest)
-{
-#if 1
-    const int col = get_global_id(0);
-    const int row = get_global_id(1);
-#else
-    const int row = get_global_id(0);
-    const int col = get_global_id(1);
-#endif
-    const int ncols = get_image_width(src);
-    const int nrows = get_image_height(src);
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+typedef float  real;
+typedef float2 complex;
+typedef float4 complex2;
+typedef float8 complex4;
 
-    if(col >= ncols || row >= nrows)
-        return;
+#define _2PI 6.283185307179586476925f
 
-    int4 val = (int4)(0,0,0,0);
-    if(row != ((nrows+1)/2))
-        val = read_imagei(src, (int2)(col, row));
-
-    write_imagei(dest, (int2)(col, row), val);
-}*/
-
-typedef struct
-{
-  double real;
-  double imag;
-} complex;
-
-#define PI 3.14159265358979323846
-
-kernel void fft(image2d_t read_only src, global complex* restrict dest,
-                local complex* restrict lmem, int u, int v)
+kernel void kerinit(global real *out, int nrows, int ncols)
 {
 #if 0
-    const int col = get_global_id(0);
-    const int row = get_global_id(1);
+    int r = get_global_id(0);
+    int c = get_global_id(1);
 #else
-    const int row = get_global_id(0);
-    const int col = get_global_id(1);
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r < 3 && c < 3)
+        out[r*ncols+c] = 1.0/9;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void fft_mat(global real* restrict src, global complex* restrict dest,
+                    int nrows, int ncols)
+{
+#if 0
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+
+    if(v >= ncols || u >= nrows)
+        return;
+    complex acc = (complex)(0, 0);
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
+
+    for(int row=0; row<nrows; ++row)
+        for(int col=0; col<ncols; ++col)
+        {
+            real val = src[row*ncols+col];
+            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+            acc += (complex)(val*cos(r), -sin(r)*val);
+        }
+    dest[u*ncols+v] = (complex)(acc.x, acc.y);
+}
+
+kernel void fft_img(image2d_t read_only src, global complex* restrict dest)
+{
+#if 0
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
 #endif
     const int ncols = get_image_width(src);
     const int nrows = get_image_height(src);
 
-    if(col >= ncols || row >= nrows)
+    if(v >= ncols || u >= nrows)
         return;
 
-    int4 val = read_imagei(src, (int2)(row, col)); //f(x,y)
-    double r = 2 * PI * (((u*row)/(double)nrows) + ((v*col)/(double)ncols));
-    complex z = { cos(r), -sin(r) };
-    complex _z = { (val.x * z.real), (val.x * z.imag) };
+    complex acc = (complex)(0, 0);
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
 
-    lmem->real += _z.real;
-    lmem->imag += _z.imag;
-    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int row=0; row<nrows; ++row)
+        for(int col=0; col<ncols; ++col)
+        {
+            int4 val = read_imagei(src, (int2)(row, col)); //f(x,y)
+            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+            acc += (complex)(val.x*cos(r), -sin(r)*val.x);
+        }
+    dest[u*ncols+v] = (complex)(acc.x, acc.y);
 
-    if(col == 0 && row == 0)
-    {
-      dest[u*ncols+v].real = lmem->real;
-      dest[u*ncols+v].imag = lmem->imag;
-    }
 }
 
-kernel void product(global const complex* restrict v1,
-                    global const complex* restrict v2,
-                    global complex* restrict vprod, int nrows, int ncols)
+kernel void ifft(global complex* restrict src, image2d_t write_only dest)
 {
-    int r = get_global_id(0);
-    int c = get_global_id(1);
-
-    if(c >= ncols || r >= nrows)
+#if 0
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+    const int ncols = get_image_width(dest);
+    const int nrows = get_image_height(dest);
+    if(v >= ncols || u >= nrows)
         return;
 
-    int idx = r*ncols+c;
+    real acc = 0;
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
+
+    for(int row=0; row<nrows; ++row)
+        for(int col=0; col<ncols; ++col)
+        {
+            complex val = src[row*ncols+col];
+            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+
+            acc += (real)(val.x*cos(r) - val.y*sin(r));
+        }
+
+    acc /= (real)(nrows*ncols);
+    int norm = (int)(acc) + 1;
+    int4 out = (int4)(norm, norm, norm, 1.0);
+    write_imagei(dest, (int2)(u, v), out);
+}
+
+kernel void product(global const complex2* restrict v1, global const complex2* restrict v2,
+                    global complex2* restrict vprod, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    const int cols = ncols/2;
+    if(c >= cols || r >= nrows)
+        return;
+
     //z*w = (a*c - b*d) + (a*d + b*c)*i
-    vprod[idx].real = (v1[idx].real*v2[idx].real) - (v1[idx].imag*v2[idx].imag);
-    vprod[idx].imag = (v1[idx].real*v2[idx].imag) + (v1[idx].imag*v2[idx].real);
+    complex2 z = v1[r*cols+c];
+    complex2 w = v2[r*cols+c];
+    vprod[r*cols+c] = (complex2) (
+                                  (z.s0*w.s0 - z.s1*w.s1), (z.s0*w.s1 + z.s1*w.s0),
+                                  (z.s2*w.s2 - z.s3*w.s3), (z.s2*w.s3 + z.s3*w.s2)
+                                 );
 }
