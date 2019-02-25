@@ -4,9 +4,14 @@ typedef float2 complex;
 typedef float4 complex2;
 typedef float8 complex4;
 
+constant sampler_t sampler =
+    CLK_NORMALIZED_COORDS_FALSE |
+    CLK_ADDRESS_NONE |
+    CLK_FILTER_NEAREST;
+
 #define _2PI 6.283185307179586476925f
 
-kernel void kerinit(global real *out, int nrows, int ncols)
+kernel void kerinit(global real* restrict out, int nrows, int ncols)
 {
 #if 0
     int r = get_global_id(0);
@@ -19,8 +24,8 @@ kernel void kerinit(global real *out, int nrows, int ncols)
     if (c >= ncols || r >= nrows)
         return;
 
-    if(r < 3 && c < 3)
-        out[r*ncols+c] = 1.0/9;
+    if(r == 1 && c == 1)
+        out[r*ncols+c] = 1.0;
     else
         out[r*ncols+c] = 0.0;
 }
@@ -38,6 +43,7 @@ kernel void fft_mat(global real* restrict src, global complex* restrict dest,
 
     if(v >= ncols || u >= nrows)
         return;
+
     complex acc = (complex)(0, 0);
     const real row_coeff = u/(real)nrows;
     const real col_coeff = v/(real)ncols;
@@ -49,6 +55,7 @@ kernel void fft_mat(global real* restrict src, global complex* restrict dest,
             real r = _2PI * ((row*row_coeff) + (col*col_coeff));
             acc += (complex)(val*cos(r), -sin(r)*val);
         }
+
     dest[u*ncols+v] = (complex)(acc.x, acc.y);
 }
 
@@ -74,12 +81,12 @@ kernel void fft_img(image2d_t read_only src, global complex* restrict dest)
     for(int row=0; row<nrows; ++row)
         for(int col=0; col<ncols; ++col)
         {
-            int4 val = read_imagei(src, (int2)(row, col)); //f(x,y)
+            int4 val = read_imagei(src, sampler, (int2)(row, col)); //f(x,y)
             real r = _2PI * ((row*row_coeff) + (col*col_coeff));
-            acc += (complex)(val.x*cos(r), -sin(r)*val.x);
+            acc += (complex)(val.x*cos(r), -sin(r)*val.x); //?
         }
-    dest[u*ncols+v] = (complex)(acc.x, acc.y);
 
+    dest[u*ncols+v] = (complex)(acc.x, acc.y);
 }
 
 kernel void ifft(global complex* restrict src, image2d_t write_only dest)
@@ -96,7 +103,7 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
     if(v >= ncols || u >= nrows)
         return;
 
-    real acc = 0;
+    real acc = 0.0;
     const real row_coeff = u/(real)nrows;
     const real col_coeff = v/(real)ncols;
 

@@ -198,7 +198,6 @@ int main(int argc, char *argv[])
         error("supportiamo solo immagini a 3 o 4 canali");
 
     size_t npixels = img.width*img.height;
-    //size_t memsize = npixels*sizeof(int);
     size_t memsize_real = npixels*sizeof(real);
     size_t memsize_complex = npixels*sizeof(complex);
 
@@ -231,13 +230,12 @@ int main(int argc, char *argv[])
 
     cl_image_desc img_desc;
     memset(&img_desc, 0, sizeof(img_desc));
-
     img_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
     img_desc.image_width = img.width;
     img_desc.image_height = img.height;
 
     //Immagine di input
-    cl_mem d_src_img = clCreateImage(ctx, CL_MEM_READ_WRITE, &fmt, &img_desc,
+    cl_mem d_src_img = clCreateImage(ctx, CL_MEM_READ_ONLY, &fmt, &img_desc,
                                      NULL, &err);
     ocl_check(err, "create image src_img");
     //Immagine finale
@@ -283,7 +281,6 @@ int main(int argc, char *argv[])
 
     //Download risultato
     memset(img.data, 0, img.data_size);
-
     err = clEnqueueReadImage(que, d_dest_img, CL_TRUE, origin, region, 0, 0,
                              img.data, 1, &evt_ifft, &evt_download);
     ocl_check(err, "download su dest_img");
