@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef float     real;
-typedef cl_float2 complex;
+typedef double     real;
+typedef cl_double2 complex;
 
 void error(const char *msg)
 {
@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
     //Allocazione immagine
     cl_image_format fmt = {
         .image_channel_order = CL_RGBA,
-        .image_channel_data_type = (img.depth == 8 ? CL_SIGNED_INT8 : CL_SIGNED_INT16)
+        .image_channel_data_type = (img.depth == 8 ? CL_UNSIGNED_INT8 : CL_UNSIGNED_INT16)
     };
 
     cl_image_desc img_desc;
