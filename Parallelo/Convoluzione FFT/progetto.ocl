@@ -166,65 +166,50 @@ kernel void sharp(global real* restrict out, int nrows, int ncols)
 }
 
 //Trasformata
-kernel void fft_mat(global real* restrict src, global complex* restrict dest,
-                    int nrows, int ncols)
+kernel void fft_prod(image2d_t read_only src, global real* restrict filter,
+                 global complex* restrict vprod)
 {
 #if 0
-    const int v = get_global_id(0);
-    const int u = get_global_id(1);
+    int u = get_global_id(0);
+    int v = get_global_id(1);
 #else
-    const int u = get_global_id(0);
-    const int v = get_global_id(1);
-#endif
-
-    if(v >= ncols || u >= nrows)
-        return;
-
-    complex acc = (complex)(0, 0);
-    const real row_coeff = u/(real)nrows;
-    const real col_coeff = v/(real)ncols;
-
-    for(int row=0; row<nrows; ++row)
-        for(int col=0; col<ncols; ++col)
-        {
-            real val = src[row*ncols+col];
-            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
-            acc += (complex)(val*cos(r), -sin(r)*val);
-        }
-
-    dest[u*ncols+v] = (complex)(acc.x, acc.y);
-}
-
-kernel void fft_img(image2d_t read_only src, global complex* restrict dest)
-{
-#if 0
-    const int v = get_global_id(0);
-    const int u = get_global_id(1);
-#else
-    const int u = get_global_id(0);
-    const int v = get_global_id(1);
+    int v = get_global_id(0); //
+    int u = get_global_id(1);
 #endif
     const int ncols = get_image_width(src);
     const int nrows = get_image_height(src);
-
+    
     if(v >= ncols || u >= nrows)
         return;
-
-    complex acc = (complex)(0, 0);
+    
+    complex acc_img = (complex)(0, 0);
+    complex acc_ker = (complex)(0, 0);
     const real row_coeff = u/(real)nrows;
     const real col_coeff = v/(real)ncols;
-
+    
+    //FFT
     for(int row=0; row<nrows; ++row)
         for(int col=0; col<ncols; ++col)
         {
-            float4 val = read_imagef(src, sampler, (int2)(row, col)); //f(x,y)
+            real val_ker = filter[row*ncols+col];
+            float4 val_img = read_imagef(src, sampler, (int2)(row, col));
+            
             real r = _2PI * ((row*row_coeff) + (col*col_coeff));
-            acc += (complex)(val.x*cos(r), -sin(r)*val.x); //?
+            real cosval, sinval;
+            sinval = -sincos(r, &cosval); //
+            
+            acc_img += (complex)(val_img.x*cosval, val_img.x*sinval);
+            acc_ker += (complex)(val_ker*cosval, val_ker*sinval);
         }
-
-    dest[u*ncols+v] = (complex)(acc.x, acc.y);
+    
+    //Prodotto puntuale: z*w = (a*c - b*d) + (a*d + b*c)*i
+    vprod[u*ncols+v] = (complex)(
+                                 acc_img.x*acc_ker.x - acc_img.y*acc_ker.y,
+                                 acc_img.x*acc_ker.y + acc_img.y*acc_ker.x
+                                );
 }
 
+//Antitrasformata
 kernel void ifft(global complex* restrict src, image2d_t write_only dest)
 {
 #if 0
@@ -255,29 +240,4 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
     real norm = clamp(acc, 0.0, 1.0);
     float4 out = (float4)(norm, norm, norm, 1);
     write_imagef(dest, (int2)(u, v), out);
-}
-
-//Prodotto puntuale
-kernel void product(global const complex2* restrict v1, global const complex2* restrict v2,
-                    global complex2* restrict vprod, int nrows, int ncols)
-{
-#if 0
-    int r = get_global_id(0);
-    int c = get_global_id(1);
-#else
-    int c = get_global_id(0);
-    int r = get_global_id(1);
-#endif
-
-    const int cols = ncols/2;
-    if(c >= cols || r >= nrows)
-        return;
-
-    //z*w = (a*c - b*d) + (a*d + b*c)*i
-    complex2 z = v1[r*cols+c];
-    complex2 w = v2[r*cols+c];
-    vprod[r*cols+c] = (complex2) (
-                                  (z.s0*w.s0 - z.s1*w.s1), (z.s0*w.s1 + z.s1*w.s0),
-                                  (z.s2*w.s2 - z.s3*w.s3), (z.s2*w.s3 + z.s3*w.s2)
-                                 );
 }

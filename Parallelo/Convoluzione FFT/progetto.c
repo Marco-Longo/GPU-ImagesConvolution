@@ -41,38 +41,8 @@ cl_event kerinit(cl_command_queue que, cl_kernel kerinit_k, cl_mem d_mat,
     return evt_init;
 }
 
-cl_event fft_mat(cl_command_queue que, cl_kernel fft_mat_k, cl_mem d_src_mat,
-                 cl_mem d_dest_mat, int nrows, int ncols,
-                 int n_wait_events, cl_event *wait_events)
-{
-    cl_int err;
-    cl_int arg = 0;
-
-    err = clSetKernelArg(fft_mat_k, arg++, sizeof(d_src_mat), &d_src_mat);
-    ocl_check(err, "set fft_mat arg %d", arg - 1);
-    err = clSetKernelArg(fft_mat_k, arg++, sizeof(d_dest_mat), &d_dest_mat);
-    ocl_check(err, "set fft_mat arg %d", arg - 1);
-    err = clSetKernelArg(fft_mat_k, arg++, sizeof(nrows), &nrows);
-    ocl_check(err, "set fft_mat arg %d", arg - 1);
-    err = clSetKernelArg(fft_mat_k, arg++, sizeof(ncols), &ncols);
-    ocl_check(err, "set fft_mat arg %d", arg - 1);
-
-    const size_t lws[] = {16, 16};
-    const size_t gws[] = {
-                           round_mul_up(nrows, lws[0]),
-                           round_mul_up(ncols, lws[1]),
-                         };
-
-    cl_event evt_fft;
-    err = clEnqueueNDRangeKernel(que, fft_mat_k, 2, NULL, gws, lws, n_wait_events,
-                                 wait_events, &evt_fft);
-    ocl_check(err, "enqueue fft_mat");
-
-    return evt_fft;
-}
-
-cl_event fft_img(cl_command_queue que, cl_kernel fft_img_k, cl_mem d_src_img,
-                 cl_mem d_dest_mat, int n_wait_events, cl_event *wait_events)
+cl_event fft_prod(cl_command_queue que, cl_kernel fft_prod_k, cl_mem d_src_img,
+                  cl_mem d_ker, cl_mem d_vprod, int n_wait_events, cl_event *wait_events)
 {
     cl_int err;
     cl_int arg = 0;
@@ -86,54 +56,25 @@ cl_event fft_img(cl_command_queue que, cl_kernel fft_img_k, cl_mem d_src_img,
                          &nrows, NULL);
     ocl_check(err, "get image height");
 
-    err = clSetKernelArg(fft_img_k, arg++, sizeof(d_src_img), &d_src_img);
-    ocl_check(err, "set fft_img arg %d", arg - 1);
-    err = clSetKernelArg(fft_img_k, arg++, sizeof(d_dest_mat), &d_dest_mat);
-    ocl_check(err, "set fft_img arg %d", arg - 1);
+    err = clSetKernelArg(fft_prod_k, arg++, sizeof(d_src_img), &d_src_img);
+    ocl_check(err, "set fft_prod arg %d", arg - 1);
+    err = clSetKernelArg(fft_prod_k, arg++, sizeof(d_ker), &d_ker);
+    ocl_check(err, "set fft_prod arg %d", arg - 1);
+    err = clSetKernelArg(fft_prod_k, arg++, sizeof(d_vprod), &d_vprod);
+    ocl_check(err, "set fft_prod arg %d", arg - 1);
 
     const size_t lws[] = {16, 16};
-    const size_t gws[] = {
-                           round_mul_up(nrows, lws[0]),
-                           round_mul_up(ncols, lws[1]),
-                         };
-
-    cl_event evt_fft;
-    err = clEnqueueNDRangeKernel(que, fft_img_k, 2, NULL, gws, lws, n_wait_events,
-                                 wait_events, &evt_fft);
-    ocl_check(err, "enqueue fft");
-
-    return evt_fft;
-}
-
-cl_event product(cl_command_queue que, cl_kernel prod_k, cl_mem d_v1,
-                 cl_mem d_v2, cl_mem d_vprod, cl_int nrows, cl_int ncols,
-                 int n_wait_events, cl_event *wait_events)
-{
-    cl_int err;
-    cl_int arg = 0;
-    err = clSetKernelArg(prod_k, arg++, sizeof(d_v1), &d_v1);
-    ocl_check(err, "set prod arg %d", arg - 1);
-    err = clSetKernelArg(prod_k, arg++, sizeof(d_v2), &d_v2);
-    ocl_check(err, "set prod arg %d", arg - 1);
-    err = clSetKernelArg(prod_k, arg++, sizeof(d_vprod), &d_vprod);
-    ocl_check(err, "set prod arg %d", arg - 1);
-    err = clSetKernelArg(prod_k, arg++, sizeof(nrows), &nrows);
-    ocl_check(err, "set prod arg %d", arg - 1);
-    err = clSetKernelArg(prod_k, arg++, sizeof(ncols), &ncols);
-    ocl_check(err, "set prod arg %d", arg - 1);
-
-    const size_t lws[] = { 32, 8 };
     const size_t gws[] = {
                            round_mul_up(ncols, lws[0]),
                            round_mul_up(nrows, lws[1]),
                          };
 
-    cl_event evt_prod;
-    err = clEnqueueNDRangeKernel(que, prod_k, 2, NULL, gws, lws,
-                                 n_wait_events, wait_events, &evt_prod);
-    ocl_check(err, "enqueue prod");
+    cl_event evt_fft;
+    err = clEnqueueNDRangeKernel(que, fft_prod_k, 2, NULL, gws, lws, n_wait_events,
+                                 wait_events, &evt_fft);
+    ocl_check(err, "enqueue fft_prod");
 
-    return evt_prod;
+    return evt_fft;
 }
 
 cl_event ifft(cl_command_queue que, cl_kernel ifft_k, cl_mem d_src_mat,
@@ -190,8 +131,6 @@ int main(int argc, char *argv[])
     const char *src = argv[1];
     const char *dest = argv[2];
     const char *filter = argv[3];
-    int len = sizeof(filter);
-
     if (
         strcmp(filter, "identity") != 0 && strcmp(filter, "Nbox3") != 0 &&
         strcmp(filter, "Nbox5") != 0 && strcmp(filter, "sobelX") != 0 &&
@@ -230,15 +169,9 @@ int main(int argc, char *argv[])
     cl_kernel kerinit_k = clCreateKernel(prog, filter, &err);
     ocl_check(err, "create kernel kerinit");
 
-    cl_kernel fft_mat_k = clCreateKernel(prog, "fft_mat", &err);
-    ocl_check(err, "create kernel fft_mat");
-
-    cl_kernel fft_img_k = clCreateKernel(prog, "fft_img", &err);
-    ocl_check(err, "create kernel fft_img");
-
-    cl_kernel prod_k = clCreateKernel(prog, "product", &err);
-    ocl_check(err, "create kernel prod");
-
+    cl_kernel fft_prod_k = clCreateKernel(prog, "fft_prod", &err);
+    ocl_check(err, "create kernel fft_prod");
+    
     cl_kernel ifft_k = clCreateKernel(prog, "ifft", &err);
     ocl_check(err, "create kernel ifft");
 
@@ -263,15 +196,9 @@ int main(int argc, char *argv[])
                                       &fmt, &img_desc, NULL, &err);
     ocl_check(err, "create image dest_img");
     //Buffers
-    cl_mem d_ker1 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
-                                   memsize_real, NULL, &err);
-    ocl_check(err, "create buffer ker1");
-    cl_mem d_vfft = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
-                                   memsize_complex, NULL, &err);
-    ocl_check(err, "create buffer vfft");
-    cl_mem d_ker2 = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
-                                   memsize_complex, NULL, &err);
-    ocl_check(err, "create buffer ker2");
+    cl_mem d_ker = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
+                                  memsize_real, NULL, &err);
+    ocl_check(err, "create buffer ker");
     cl_mem d_vprod = clCreateBuffer(ctx, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                                     memsize_complex, NULL, &err);
     ocl_check(err, "create buffer vprod");
@@ -286,18 +213,13 @@ int main(int argc, char *argv[])
     ocl_check(err, "upload src_img");
 
     //Lancio kernel
-    cl_event evt_init = kerinit(que, kerinit_k, d_ker1, img.height, img.width,
+    cl_event evt_init = kerinit(que, kerinit_k, d_ker, img.height, img.width,
                                 0, NULL);
 
-    cl_event evt_fft[2];
-    evt_fft[0] = fft_img(que, fft_img_k, d_src_img, d_vfft, 1, &evt_upload);
-    evt_fft[1] = fft_mat(que, fft_mat_k, d_ker1, d_ker2, img.height, img.width,
-                         1, &evt_init);
+    cl_event evt_fft = fft_prod(que, fft_prod_k, d_src_img, d_ker, 
+                                d_vprod, 1, &evt_init);
 
-    cl_event evt_prod = product(que, prod_k, d_vfft, d_ker2, d_vprod, img.height,
-                                img.width, 2, evt_fft);
-
-    cl_event evt_ifft = ifft(que, ifft_k, d_vprod, d_dest_img, 1, &evt_prod);
+    cl_event evt_ifft = ifft(que, ifft_k, d_vprod, d_dest_img, 1, &evt_fft);
 
     //Download risultato
     memset(img.data, 0, img.data_size);
@@ -312,8 +234,19 @@ int main(int argc, char *argv[])
     printf("upload: %gms\t%gGB/s\n", runtime_ms(evt_upload),
            (1.0*img.data_size)/runtime_ns(evt_upload));
 
+    printf("kerinit: %gms\t%GB/s\n", runtime_ms(evt_init),
+           (1.0*memsize_real)/runtime_ns(evt_init));
+
+    printf("fft_prod: %gms\t%gGB/s\n", runtime_ms(evt_fft),
+           (3.0*memsize_complex*npixels)/runtime_ns(evt_fft));
+
+    printf("ifft: %gms\t%gGB/s\n", runtime_ms(evt_ifft),
+           (2.0*memsize_complex*npixels)/runtime_ns(evt_ifft));
+
     printf("download: %gms\t%gGB/s\n", runtime_ms(evt_download),
            (1.0*img.data_size)/runtime_ns(evt_download));
+
+
 
     //Salvataggio immagine
     err = save_pam(dest, &img);
@@ -323,16 +256,12 @@ int main(int argc, char *argv[])
 
     clReleaseMemObject(d_src_img);
     clReleaseMemObject(d_dest_img);
-    clReleaseMemObject(d_vfft);
-    clReleaseMemObject(d_ker1);
-    clReleaseMemObject(d_ker2);
+    clReleaseMemObject(d_ker);
     clReleaseMemObject(d_vprod);
 
     clReleaseKernel(kerinit_k);
-    clReleaseKernel(fft_mat_k);
-    clReleaseKernel(fft_img_k);
+    clReleaseKernel(fft_prod_k);
     clReleaseKernel(ifft_k);
-    clReleaseKernel(prod_k);
     clReleaseProgram(prog);
     clReleaseCommandQueue(que);
     clReleaseContext(ctx);
