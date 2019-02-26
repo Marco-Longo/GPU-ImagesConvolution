@@ -175,13 +175,32 @@ int main(int argc, char *argv[])
 {
     if (argc != 4)
     {
-        fprintf(stderr, "%s src_img dest_img filter\n", argv[0]);
+        fprintf(stderr, "Usa la seguente sintassi: %s src_img dest_img filter\n"
+                        "filter può assumere i seguenti valori:\n"
+                        "- identity (filtro identità)\n"
+                        "- Nbox3 (filtro di media 3x3)\n"
+                        "- Nbox5 (filtro di media 5x5)\n"
+                        "- sobelX (filtro di scansione dei dettagli orizzontali)\n"
+                        "- sobelY (filtro di scansione dei dettagli verticali)\n"
+                        "- laplace (filtro di edge detection)\n"
+                        "- sharp (filtro di sharpening)\n", argv[0]);
         exit(1);
     }
 
     const char *src = argv[1];
     const char *dest = argv[2];
     const char *filter = argv[3];
+    int len = sizeof(filter);
+
+    if (
+        strcmp(filter, "identity") != 0 && strcmp(filter, "Nbox3") != 0 &&
+        strcmp(filter, "Nbox5") != 0 && strcmp(filter, "sobelX") != 0 &&
+        strcmp(filter, "sobelY") != 0 && strcmp(filter, "laplace") != 0 &&
+        strcmp(filter, "sharp") != 0
+       )
+       error("Il filtro inserito non è valido, inserisci uno dei valori "
+             "suggeriti dal prompt");
+
     imgInfo img;
     cl_int err;
 
