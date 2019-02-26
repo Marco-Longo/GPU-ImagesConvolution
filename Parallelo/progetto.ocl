@@ -119,6 +119,53 @@ kernel void sobelY(global real* restrict out, int nrows, int ncols)
         out[r*ncols+c] = 0.0;
 }
 
+kernel void laplace(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 1 && c == 1)
+        out[r*ncols+c] = 4.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sharp(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 1 && c == 1)
+        out[r*ncols+c] = 5.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+//Trasformata
 kernel void fft_mat(global real* restrict src, global complex* restrict dest,
                     int nrows, int ncols)
 {
@@ -210,6 +257,7 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
     write_imagef(dest, (int2)(u, v), out);
 }
 
+//Prodotto puntuale
 kernel void product(global const complex2* restrict v1, global const complex2* restrict v2,
                     global complex2* restrict vprod, int nrows, int ncols)
 {
