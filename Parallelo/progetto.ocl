@@ -11,7 +11,90 @@ constant sampler_t sampler =
 
 #define _2PI 6.283185307179586476925f
 
-kernel void kerinit(global real* restrict out, int nrows, int ncols)
+//FILTRI
+kernel void identity(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 1 && c == 1)
+        out[r*ncols+c] = 1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void Nbox3(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r < 3 && c < 3)
+        out[r*ncols+c] = 1.0/9;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void Nbox5(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r < 5 && c < 5)
+        out[r*ncols+c] = 1.0/25;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sobelX(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(c == 0 && (r == 0 || r == 2))
+        out[r*ncols+c] = 1.0;
+    else if(c == 0 && r == 1)
+        out[r*ncols+c] = 2.0;
+    else if(c == 2 && (r == 0 || r == 2))
+        out[r*ncols+c] = -1.0;
+    else if(c == 2 && r == 1)
+        out[r*ncols+c] = -2.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sobelY(global real* restrict out, int nrows, int ncols)
 {
 #if 0
     int r = get_global_id(0);

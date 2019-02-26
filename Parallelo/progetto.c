@@ -173,14 +173,15 @@ cl_event ifft(cl_command_queue que, cl_kernel ifft_k, cl_mem d_src_mat,
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 4)
     {
-        fprintf(stderr, "%s src_img dest_img\n", argv[0]);
+        fprintf(stderr, "%s src_img dest_img filter\n", argv[0]);
         exit(1);
     }
 
     const char *src = argv[1];
     const char *dest = argv[2];
+    const char *filter = argv[3];
     imgInfo img;
     cl_int err;
 
@@ -207,7 +208,7 @@ int main(int argc, char *argv[])
         error("il numero di pixels deve essere una potenza di due");
 
     //Creazione kernel
-    cl_kernel kerinit_k = clCreateKernel(prog, "kerinit", &err);
+    cl_kernel kerinit_k = clCreateKernel(prog, filter, &err);
     ocl_check(err, "create kernel kerinit");
 
     cl_kernel fft_mat_k = clCreateKernel(prog, "fft_mat", &err);
