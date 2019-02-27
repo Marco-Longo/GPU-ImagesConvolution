@@ -1,8 +1,9 @@
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
-typedef double real;
+typedef float  real;
+typedef float4 real4;
 
 //MATINIT
-kernel void matinit(global int *out, int nrows, int ncols)
+kernel void matinit(global real *restrict out, int nrows, int ncols)
 {
 #if 0
     int r = get_global_id(0);
@@ -15,7 +16,7 @@ kernel void matinit(global int *out, int nrows, int ncols)
     if (c >= ncols || r >= nrows)
         return;
 
-    out[r*ncols+c] = r+c;
+    out[r*ncols+c] = 10*(ncols*r+c+1);
 }
 
 //FILTRI
@@ -189,9 +190,96 @@ kernel void conv(global const real* restrict input, int nrows, int ncols,
     for(int x=0; x<f_dim; ++x)
         for(int y=0; y<f_dim; ++y)
         {
-            int row = clamp((int)(u+(x-1)*offset), 0, nrows-1);
-            int col = clamp((int)(v+(y-1)*offset), 0, ncols-1);
+            int row = clamp((int)(u-offset+x), 0, nrows-1);
+            int col = clamp((int)(v-offset+y), 0, ncols-1);
             acc += filter[x*f_dim+y]*input[row*ncols+col];
+        }
+
+    output[u*ncols+v] = acc;
+}
+
+kernel void conv4(global const real* restrict input, int nrows, int ncols, //multiplo di 4
+                  global const real* restrict filter, int f_dim,
+                  global real4* restrict output)
+{
+#if 1
+    const int v = 4*get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+
+    if(u >= nrows || v >= ncols)
+        return;
+
+    int offset = f_dim/2;
+    real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
+
+    real vec[50];
+
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<(3+f_dim); ++y)
+        {
+            int row = clamp((int)(u-offset+x), 0, nrows-1);
+            int col = clamp((int)(v-offset+y), 0, ncols-1);
+
+            vec[x*(3+f_dim)+y] = input[row*ncols+col];
+        }
+
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<f_dim; ++y)
+        {
+            acc.x += filter[x*f_dim+y]*vec[x*(f_dim+3)+y];
+            acc.y += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+1];
+            acc.z += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+2];
+            acc.w += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+3];
+        }
+
+    output[u*ncols/4+v/4] = acc;
+}
+
+
+//non funzionante
+kernel void conv_lmem(global const real* restrict input, int nrows, int ncols,
+                      global const real* restrict filter, int f_dim,
+                      global real* restrict output, local real* lmem)
+{
+#if 1
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+    int lidx = get_local_id(0);
+
+    if(u < nrows || v < ncols)
+        lmem[lidx] = input[u*ncols+v];
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if(u >= nrows || v >= ncols)
+        return;
+
+    int offset = f_dim/2;
+    real acc = 0.0;
+
+    int gi = get_group_id(0);
+    int lws = get_local_size(0);
+
+    int min_i = gi * lws;
+    int max_i = min_i + lws;
+
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<f_dim; ++y)
+        {
+            int row = clamp((int)(u-offset+x), 0, nrows-1);
+            int col = clamp((int)(v-offset+y), 0, ncols-1);
+            int i = row*ncols+col;
+
+            real val = (i<max_i && i>min_i) ? lmem[i-min_i] : input[i];
+            acc += filter[x*f_dim+y]*val;
         }
 
     output[u*ncols+v] = acc;

@@ -4,8 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <float.h>
 
-typedef double real;
+typedef float real;
 
 //Codice sequenziale
 real **init(int M, int N)
@@ -42,7 +43,10 @@ real **init_kernel(int M, int N)
   {
     k[i] = malloc(N * sizeof(real));
     for(int j=0; j<N; j++)
-      k[i][j] = 1.0/(M*N);
+    {
+      if(i==1 && j==1)  k[i][j] = 1.0;
+      else  k[i][j] = 0.0;
+    }
   }
 
   return k;
@@ -65,8 +69,8 @@ real **convoluzione(real **m, int M, int N, real **filter, int f_dim)
             for(int x=0; x<f_dim; x++)
                 for(int y=0; y<f_dim; y++)
                 {
-                    int row = clamp((int)(u+(x-1)*offset), 0, M-1);
-                    int col = clamp((int)(v+(y-1)*offset), 0, N-1);
+                    int row = clamp((int)(u-offset+x), 0, M-1);
+                    int col = clamp((int)(v-offset+y), 0, N-1);
                     acc += filter[x][y] * m[row][col];
                 }
 
@@ -172,7 +176,44 @@ cl_event conv(cl_command_queue que, cl_kernel conv_k, cl_mem d_input,
 
     return evt_conv;
 }
+/*
+cl_event conv(cl_command_queue que, cl_kernel conv_k, cl_mem d_input,
+              cl_int nrows, cl_int ncols, cl_mem d_ker, cl_int f_dim,
+              cl_mem d_output, int n_wait_events, cl_event *wait_events)
+{
+    cl_int err;
+    cl_int arg = 0;
 
+    const size_t lws[] = { 32, 8 };
+    const size_t gws[] = {
+                           round_mul_up(ncols, lws[0]),
+                           round_mul_up(nrows, lws[1]),
+                         };
+
+    err = clSetKernelArg(conv_k, arg++, sizeof(d_input), &d_input);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(nrows), &nrows);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(ncols), &ncols);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(d_ker), &d_ker);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(f_dim), &f_dim);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(d_output), &d_output);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, lws[0]*lws[1]*sizeof(real), NULL);
+    ocl_check(err, "set conv arg %d", arg - 1);
+
+
+    cl_event evt_conv;
+    err = clEnqueueNDRangeKernel(que, conv_k, 2, NULL, gws, lws,
+                                 n_wait_events, wait_events, &evt_conv);
+    ocl_check(err, "enqueue conv");
+
+    return evt_conv;
+}
+*/
 void verify(real *reale, int nrows, int ncols, int f_dim)
 {
     real **mat = init(nrows, ncols);
@@ -180,12 +221,14 @@ void verify(real *reale, int nrows, int ncols, int f_dim)
     real **atteso = convoluzione(mat, nrows, ncols, ker, f_dim);
 
     for (int x = 0; x < nrows; ++x)
-        for (int y = 0; y < ncols; ++y)
+      for (int y = 0; y < ncols; ++y)
+      {
+        if( ((fabs(atteso[x][y]-reale[x*ncols+y])) > ((FLT_EPSILON)*fabs(atteso[x][y]))) )
         {
-            if((atteso[x][y] != reale[x*ncols+y]))
-                fprintf(stderr, "mismatch@ %d %d: %g != %g\n",
-                        x, y, reale[x*ncols+y], atteso[x][y]);
+          fprintf(stderr, "mismatch@ %d %d: %.9g != %.9g\n",
+                  x, y, reale[x*ncols+y], atteso[x][y]);
         }
+      }
 }
 
 int main(int argc, char *argv[])
