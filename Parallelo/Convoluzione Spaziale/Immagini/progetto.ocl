@@ -1,0 +1,271 @@
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+typedef float  real;
+typedef float4 real4;
+
+constant sampler_t sampler =
+    CLK_NORMALIZED_COORDS_FALSE |
+    CLK_ADDRESS_CLAMP_TO_EDGE |
+    CLK_FILTER_NEAREST;
+
+//FILTRI
+kernel void identity(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 1 && c == 1)
+        out[r*ncols+c] = 1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void Nbox3(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    out[r*ncols+c] = 1.0/9;
+
+}
+
+kernel void Nbox5(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    out[r*ncols+c] = 1.0/25;
+
+}
+
+kernel void sobelX(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(c == 0 && (r == 0 || r == 2))
+        out[r*ncols+c] = 1.0;
+    else if(c == 0 && r == 1)
+        out[r*ncols+c] = 2.0;
+    else if(c == 2 && (r == 0 || r == 2))
+        out[r*ncols+c] = -1.0;
+    else if(c == 2 && r == 1)
+        out[r*ncols+c] = -2.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sobelY(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = 1.0;
+    else if(r == 0 && c == 1)
+        out[r*ncols+c] = 2.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 2 && c == 1)
+        out[r*ncols+c] = -2.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void laplace(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 1 && c == 1)
+        out[r*ncols+c] = 4.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sharp(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 1 && c == 1)
+        out[r*ncols+c] = 5.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+//Convoluzione
+kernel void conv(image2d_t read_only input, global const real* restrict filter,
+                 int f_dim, image2d_t write_only output)
+{
+#if 1
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+    const int ncols = get_image_width(input);
+    const int nrows = get_image_height(input);
+
+    if(u >= nrows || v >= ncols)
+        return;
+
+    int offset = f_dim/2;
+    real acc = 0.0;
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<f_dim; ++y)
+        {
+            int row = clamp((int)(u-offset+x), 0, nrows-1);
+            int col = clamp((int)(v-offset+y), 0, ncols-1);
+
+            float4 val = read_imagef(input, sampler, (int2)(row, col));
+            acc += filter[x*f_dim+y]*val.x;
+        }
+
+    real norm = clamp(acc, 0.0f, 1.0f);
+    float4 out = (float4)(norm, norm, norm, 1);
+    write_imagef(output, (int2)(u, v), out);
+    //output[u*ncols+v] = acc;
+}
+/*
+kernel void conv4(global const real* restrict input, int nrows, int ncols, //multiplo di 4
+                  global const real* restrict filter, int f_dim,
+                  global real4* restrict output)
+{
+#if 1
+    const int v = 4*get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+
+    if(u >= nrows || v >= ncols)
+        return;
+
+    int offset = f_dim/2;
+    real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
+
+    real vec[50];
+
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<(3+f_dim); ++y)
+        {
+            int row = clamp((int)(u-offset+x), 0, nrows-1);
+            int col = clamp((int)(v-offset+y), 0, ncols-1);
+
+            vec[x*(3+f_dim)+y] = input[row*ncols+col];
+        }
+
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<f_dim; ++y)
+        {
+            acc.x += filter[x*f_dim+y]*vec[x*(f_dim+3)+y];
+            acc.y += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+1];
+            acc.z += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+2];
+            acc.w += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+3];
+        }
+
+    output[u*ncols/4+v/4] = acc;
+}
+*/
+
+kernel void conv4(global const real4* restrict input, int nrows, int ncols,
+                  global const real* restrict filter, int f_dim,
+                  global real4* restrict output)
+{
+#if 1
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+
+    const int cquarts = ncols/4;
+    if(u >= nrows || v >= cquarts)
+        return;
+
+    int offset = f_dim/2;
+    real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
+    global const real* restrict input_scalar = input;
+
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<f_dim; ++y)
+        {
+            int row = clamp((int)(u-offset+x), 0, nrows-1);
+            int col = clamp((int)(v-offset+y), 0, ncols-1);
+
+            real coeff = filter[x*f_dim+y];
+            acc.x += coeff*input_scalar[row*ncols+(col+0)];
+            acc.y += coeff*input_scalar[row*ncols+(col+1)];
+            acc.z += coeff*input_scalar[row*ncols+(col+2)];
+            acc.w += coeff*input_scalar[row*ncols+(col+3)];
+        }
+
+    output[u*cquarts+v] = acc;
+}
