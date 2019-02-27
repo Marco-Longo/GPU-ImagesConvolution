@@ -16,8 +16,8 @@ real **init(int M, int N)
   {
     m[i] = malloc(N * sizeof(real));
     for(int j=0; j<N; j++)
-      //m[i][j] = i+j;
-      m[i][j] = 10*(N*i+j+1);
+      m[i][j] = i+j;
+      //m[i][j] = 10*(N*i+j+1);
   }
 
   return m;
@@ -165,7 +165,7 @@ cl_event conv(cl_command_queue que, cl_kernel conv_k, cl_mem d_input,
 
     const size_t lws[] = { 32, 8 };
     const size_t gws[] = {
-                           round_mul_up(ncols, lws[0]),
+                           round_mul_up(ncols/4, lws[0]),
                            round_mul_up(nrows, lws[1]),
                          };
 
@@ -265,7 +265,7 @@ int main(int argc, char *argv[])
     cl_kernel kerinit_k = clCreateKernel(prog, filter, &err);
     ocl_check(err, "create kernel kerinit");
 
-    cl_kernel conv_k = clCreateKernel(prog, "conv", &err);
+    cl_kernel conv_k = clCreateKernel(prog, "conv4", &err);
     ocl_check(err, "create kernel conv");
 
     /* Allocazione buffer */
