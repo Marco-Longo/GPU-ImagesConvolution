@@ -132,9 +132,7 @@ int main(int argc, char *argv[])
 
     if (img.width <= 0 || img.height <= 0)
         error("le dimensioni dell'immagine devono essere positive");
-    if (npixels & (npixels-1))
-        error("il numero di pixels deve essere una potenza di due");
-
+   
     //Creazione kernel
     cl_kernel kerinit_k = clCreateKernel(prog, filter, &err);
     ocl_check(err, "create kernel kerinit");

@@ -191,8 +191,8 @@ kernel void conv(image2d_t read_only input, global const real* restrict filter,
     write_imagef(output, (int2)(u, v), out);
     //output[u*ncols+v] = acc;
 }
-/*
-kernel void conv4(global const real* restrict input, int nrows, int ncols, //multiplo di 4
+/*Da adattare
+kernel void conv4(global const real4* restrict input, int nrows, int ncols,
                   global const real* restrict filter, int f_dim,
                   global real4* restrict output)
 {
@@ -204,50 +204,8 @@ kernel void conv4(global const real* restrict input, int nrows, int ncols, //mul
     const int v = get_global_id(1);
 #endif
 
-    if(u >= nrows || v >= ncols)
-        return;
-
-    int offset = f_dim/2;
-    real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
-
-    real vec[50];
-
-    for(int x=0; x<f_dim; ++x)
-        for(int y=0; y<(3+f_dim); ++y)
-        {
-            int row = clamp((int)(u-offset+x), 0, nrows-1);
-            int col = clamp((int)(v-offset+y), 0, ncols-1);
-
-            vec[x*(3+f_dim)+y] = input[row*ncols+col];
-        }
-
-    for(int x=0; x<f_dim; ++x)
-        for(int y=0; y<f_dim; ++y)
-        {
-            acc.x += filter[x*f_dim+y]*vec[x*(f_dim+3)+y];
-            acc.y += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+1];
-            acc.z += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+2];
-            acc.w += filter[x*f_dim+y]*vec[x*(f_dim+3)+y+3];
-        }
-
-    output[u*ncols/4+v/4] = acc;
-}
-*/
-
-kernel void conv4(global const real4* restrict input, int nrows, int ncols,
-                  global const real* restrict filter, int f_dim,
-                  global real4* restrict output)
-{
-#if 1
-    const int v = get_global_id(0);
-    const int u = get_global_id(1);
-#else
-    const int u = get_global_id(0);
-    const int v = get_global_id(1);
-#endif
-
     const int cquarts = ncols/4;
-    if(u >= nrows || v >= cquarts)
+    if(u >= nrows || v >= ncols)
         return;
 
     int offset = f_dim/2;
@@ -267,5 +225,6 @@ kernel void conv4(global const real4* restrict input, int nrows, int ncols,
             acc.w += coeff*input_scalar[row*ncols+(col+3)];
         }
 
-    output[u*cquarts+v] = acc;
+    output[u*cquarts+v/4] = acc;
 }
+*/
