@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef double     real;
-typedef cl_double2 complex;
+typedef float     real;
+typedef cl_float2 complex;
 
 void error(const char *msg)
 {
@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
 
     if (img.width <= 0 || img.height <= 0)
         error("le dimensioni dell'immagine devono essere positive");
-   
+
     //Creazione kernel
     cl_kernel kerinit_k = clCreateKernel(prog, filter, &err);
     ocl_check(err, "create kernel kerinit");

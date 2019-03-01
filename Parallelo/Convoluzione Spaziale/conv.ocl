@@ -199,7 +199,7 @@ kernel void conv(global const real* restrict input, int nrows, int ncols,
     output[u*ncols+v] = acc;
 }
 
-kernel void conv4(global const real4* restrict input, int nrows, int ncols,
+kernel void conv4(global const real* restrict input, int nrows, int ncols,
                   global const real* restrict filter, int f_dim,
                   global real4* restrict output)
 {
@@ -217,7 +217,6 @@ kernel void conv4(global const real4* restrict input, int nrows, int ncols,
 
     int offset = f_dim/2;
     real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
-    global const real* restrict input_scalar = input;
 
     for(int x=0; x<f_dim; ++x)
         for(int y=0; y<f_dim; ++y)
@@ -226,10 +225,10 @@ kernel void conv4(global const real4* restrict input, int nrows, int ncols,
             int col = clamp((int)(v-offset+y), 0, ncols-1);
 
             real coeff = filter[x*f_dim+y];
-            acc.x += coeff*input_scalar[row*ncols+(col+0)];
-            acc.y += coeff*input_scalar[row*ncols+(col+1)];
-            acc.z += coeff*input_scalar[row*ncols+(col+2)];
-            acc.w += coeff*input_scalar[row*ncols+(col+3)];
+            acc.x += coeff*input[row*ncols+(col+0)];
+            acc.y += coeff*input[row*ncols+(col+1)];
+            acc.z += coeff*input[row*ncols+(col+2)];
+            acc.w += coeff*input[row*ncols+(col+3)];
         }
 
     output[u*cquarts+v/4] = acc;

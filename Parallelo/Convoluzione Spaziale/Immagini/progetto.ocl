@@ -157,7 +157,7 @@ kernel void sharp(global real* restrict out, int nrows, int ncols)
         out[r*ncols+c] = 0.0;
 }
 
-//Convoluzione
+//Convoluzione (da inserire nella relazione)
 kernel void conv(image2d_t read_only input, global const real* restrict filter,
                  int f_dim, image2d_t write_only output)
 {
@@ -189,42 +189,60 @@ kernel void conv(image2d_t read_only input, global const real* restrict filter,
     real norm = clamp(acc, 0.0f, 1.0f);
     float4 out = (float4)(norm, norm, norm, 1);
     write_imagef(output, (int2)(u, v), out);
-    //output[u*ncols+v] = acc;
 }
-/*Da adattare
-kernel void conv4(global const real4* restrict input, int nrows, int ncols,
+
+kernel void conv4(image2d_t read_only input,
                   global const real* restrict filter, int f_dim,
-                  global real4* restrict output)
+                  image2d_t write_only output)
 {
 #if 1
-    const int v = 4*get_global_id(0);
-    const int u = get_global_id(1);
+   const int v = 4*get_global_id(0);
+   const int u = get_global_id(1);
 #else
-    const int u = get_global_id(0);
-    const int v = get_global_id(1);
+   const int u = get_global_id(0);
+   const int v = get_global_id(1);
 #endif
 
-    const int cquarts = ncols/4;
-    if(u >= nrows || v >= ncols)
-        return;
+   const int ncols = get_image_width(input);
+   const int nrows = get_image_height(input);
+   const int cquarts = ncols/4;
+   if(u >= nrows || v >= ncols)
+       return;
 
-    int offset = f_dim/2;
-    real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
-    global const real* restrict input_scalar = input;
+   int offset = f_dim/2;
+   real4 acc = (real4)(0.0, 0.0, 0.0, 0.0);
 
-    for(int x=0; x<f_dim; ++x)
-        for(int y=0; y<f_dim; ++y)
-        {
-            int row = clamp((int)(u-offset+x), 0, nrows-1);
-            int col = clamp((int)(v-offset+y), 0, ncols-1);
+   for(int x=0; x<f_dim; ++x)
+       for(int y=0; y<f_dim; ++y)
+       {
+           int row = clamp((int)(u-offset+x), 0, nrows-1);
+           int col = clamp((int)(v-offset+y), 0, ncols-1);
 
-            real coeff = filter[x*f_dim+y];
-            acc.x += coeff*input_scalar[row*ncols+(col+0)];
-            acc.y += coeff*input_scalar[row*ncols+(col+1)];
-            acc.z += coeff*input_scalar[row*ncols+(col+2)];
-            acc.w += coeff*input_scalar[row*ncols+(col+3)];
-        }
+           real coeff = filter[x*f_dim+y];
 
-    output[u*cquarts+v/4] = acc;
+           real4 in;
+           float4 val = read_imagef(input, sampler, (int2)(row, col+0));
+           in.x = val.x;
+           val = read_imagef(input, sampler, (int2)(row, col+1));
+           in.y = val.x;
+           val = read_imagef(input, sampler, (int2)(row, col+2));
+           in.z = val.x;
+           val = read_imagef(input, sampler, (int2)(row, col+3));
+           in.w = val.x;
+
+           acc += coeff*in;
+       }
+
+   real4 norm = clamp(acc, 0.0f, 1.0f);
+   float4 out = (float4)(norm.x, norm.x, norm.x, 1);
+   write_imagef(output, (int2)(u, v), out);
+
+   out = (float4)(norm.y, norm.y, norm.y, 1);
+   write_imagef(output, (int2)(u, v+1), out);
+
+   out = (float4)(norm.z, norm.z, norm.z, 1);
+   write_imagef(output, (int2)(u, v+2), out);
+
+   out = (float4)(norm.w, norm.w, norm.w, 1);
+   write_imagef(output, (int2)(u, v+3), out);
 }
-*/
