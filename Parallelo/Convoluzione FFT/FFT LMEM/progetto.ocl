@@ -1,0 +1,319 @@
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+typedef double  real;
+typedef double2 complex;
+typedef double4 complex2;
+typedef double8 complex4;
+
+constant sampler_t sampler =
+    CLK_NORMALIZED_COORDS_FALSE |
+    CLK_ADDRESS_CLAMP_TO_EDGE |
+    CLK_FILTER_NEAREST;
+
+#define _2PI 6.283185307179586476925f
+
+//FILTRI
+kernel void identity(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 1 && c == 1)
+        out[r*ncols+c] = 1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void Nbox3(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r < 3 && c < 3)
+        out[r*ncols+c] = 1.0/9;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void Nbox5(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r < 5 && c < 5)
+        out[r*ncols+c] = 1.0/25;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sobelX(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(c == 0 && (r == 0 || r == 2))
+        out[r*ncols+c] = 1.0;
+    else if(c == 0 && r == 1)
+        out[r*ncols+c] = 2.0;
+    else if(c == 2 && (r == 0 || r == 2))
+        out[r*ncols+c] = -1.0;
+    else if(c == 2 && r == 1)
+        out[r*ncols+c] = -2.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sobelY(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = 1.0;
+    else if(r == 0 && c == 1)
+        out[r*ncols+c] = 2.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 2 && c == 1)
+        out[r*ncols+c] = -2.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void laplace(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 1 && c == 1)
+        out[r*ncols+c] = 4.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+kernel void sharp(global real* restrict out, int nrows, int ncols)
+{
+#if 0
+    int r = get_global_id(0);
+    int c = get_global_id(1);
+#else
+    int c = get_global_id(0);
+    int r = get_global_id(1);
+#endif
+
+    if (c >= ncols || r >= nrows)
+        return;
+
+    if(r == 0 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else if(r == 1 && c == 1)
+        out[r*ncols+c] = 5.0;
+    else if(r == 2 && (c == 0 || c == 2))
+        out[r*ncols+c] = -1.0;
+    else
+        out[r*ncols+c] = 0.0;
+}
+
+//Trasformata
+kernel void fft_prod(image2d_t read_only src, global real* restrict filter,
+                 global complex* restrict vprod)
+{
+#if 0
+    int u = get_global_id(0);
+    int v = get_global_id(1);
+#else
+    int v = get_global_id(0); //
+    int u = get_global_id(1);
+#endif
+    const int ncols = get_image_width(src);
+    const int nrows = get_image_height(src);
+
+    if(v >= ncols || u >= nrows)
+        return;
+
+    complex acc_img = (complex)(0, 0);
+    complex acc_ker = (complex)(0, 0);
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
+
+    //FFT
+    for(int row=0; row<nrows; ++row)
+        for(int col=0; col<ncols; ++col)
+        {
+            real val_ker = filter[row*ncols+col];
+            float4 val_img = read_imagef(src, sampler, (int2)(row, col));
+
+            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+            real cosval, sinval;
+            sinval = -sincos(r, &cosval); //
+
+            if(val_img.x != 0)
+              acc_img += (complex)(val_img.x*cosval, val_img.x*sinval);
+            if(val_ker != 0)
+              acc_ker += (complex)(val_ker*cosval, val_ker*sinval);
+        }
+
+    //Prodotto puntuale: z*w = (a*c - b*d) + (a*d + b*c)*i
+    vprod[u*ncols+v] = (complex)(
+                                 acc_img.x*acc_ker.x - acc_img.y*acc_ker.y,
+                                 acc_img.x*acc_ker.y + acc_img.y*acc_ker.x
+                                );
+}
+
+kernel void fft_lmem(image2d_t read_only src, global real* restrict filter,
+                     global complex* restrict dest, local complex2* restrict lmem)
+{
+    int gidx = get_group_id(0);
+    int lidx = get_local_id(0);
+    const int lws = get_local_size(0);
+    const int nwg = get_global_size(0)/lws;
+    const int ncols = get_image_width(src);
+    const int nrows = get_image_height(src);
+    const int numels = nrows*ncols;
+
+    const int niters = (numels + nwg - 1)/nwg;
+    for(int h = 0; h < niters; ++h)
+    {
+      int i = gidx + h*nwg; //work-group linear index
+      int u = i/ncols;
+      int v = i - (u*ncols);
+
+      if(u >= nrows || v >= ncols)
+          break;
+
+      int el_per_wi = (numels + lws - 1)/lws;
+      complex acc_img = (complex)(0, 0);
+      complex acc_ker = (complex)(0, 0);
+
+      const real row_coeff = u/(real)nrows;
+      const real col_coeff = v/(real)ncols;
+
+      for(int k = 0; k < el_per_wi; ++k)
+      {
+        int j = lidx + k*lws;
+        int row = j/ncols;
+        int col = j - (row*ncols);
+
+        float4 val_img = read_imagef(src, sampler, (int2)(row, col));
+        real val_ker = filter[row*ncols+col];
+        real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+
+        real sinval, cosval;
+        sinval = -sincos(r, &cosval);
+
+        if(val_img.x != 0)
+          acc_img += (complex)(val_img.x*cosval, sinval*val_img.x);
+        if(val_ker != 0)
+          acc_ker += (complex)(val_ker*cosval, sinval*val_ker);
+      }
+
+      lmem[lidx] = (complex2)(acc_img.x, acc_img.y, acc_ker.x, acc_ker.y);
+
+      for(int attivi = lws/2; attivi >= 1; attivi /= 2)
+      {
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx < attivi)
+          lmem[lidx] += lmem[lidx + attivi];
+      }
+
+      if(lidx == 0)
+      {
+          dest[gidx + h*nwg] = (complex)(
+                                         (lmem[lidx].x*lmem[lidx].z - lmem[lidx].y*lmem[lidx].w),
+                                         (lmem[lidx].x*lmem[lidx].w + lmem[lidx].y*lmem[lidx].z)
+                                        );
+      }
+      barrier(CLK_LOCAL_MEM_FENCE);
+    }
+}
+
+
+//Antitrasformata
+kernel void ifft(global complex* restrict src, image2d_t write_only dest)
+{
+#if 0
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+    const int ncols = get_image_width(dest);
+    const int nrows = get_image_height(dest);
+
+    //if(get_local_id(0) == 0 && get_local_id(1)== 0)
+      //printf("in: %d, %d\n", get_group_id(0), get_group_id(1));
+    if(v >= ncols || u >= nrows)
+        return;
+
+    real acc = 0.0;
+    const real row_coeff = u/(real)nrows;
+    const real col_coeff = v/(real)ncols;
+
+    for(int row=0; row<nrows; ++row)
+        for(int col=0; col<ncols; ++col)
+        {
+            complex val = src[row*ncols+col];
+            real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+            acc += (real)(val.x*cos(r) - val.y*sin(r));
+        }
+    acc /= (real)(nrows*ncols);
+    //acc /= 255;
+    real norm = clamp(acc, 0.0, 1.0);
+    float4 out = (float4)(norm, norm, norm, 1);
+    write_imagef(dest, (int2)(u, v), out);
+
+    //if(get_local_id(0) == 0 && get_local_id(1)== 0)
+      //printf("out: %d, %d\n", get_group_id(0), get_group_id(1));
+}
