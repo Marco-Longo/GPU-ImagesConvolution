@@ -157,7 +157,7 @@ kernel void sharp(global real* restrict out, int nrows, int ncols)
         out[r*ncols+c] = 0.0;
 }
 
-//Convoluzione (da inserire nella relazione)
+//Convoluzione
 kernel void conv(image2d_t read_only input, global const real* restrict filter,
                  int f_dim, image2d_t write_only output)
 {

@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
            (1.0*memsize_ker)/runtime_ns(evt_init));
 
     printf("conv: %gms\t%gGB/s\n", runtime_ms(evt_conv),
-           (2.0*img.data_size)/runtime_ns(evt_conv));
+           (10.0*img.data_size)/runtime_ns(evt_conv));
 
     printf("download: %gms\t%gGB/s\n", runtime_ms(evt_download),
            (1.0*img.data_size)/runtime_ns(evt_download));

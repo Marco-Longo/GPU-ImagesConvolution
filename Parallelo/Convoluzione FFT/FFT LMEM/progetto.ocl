@@ -165,7 +165,7 @@ kernel void sharp(global real* restrict out, int nrows, int ncols)
         out[r*ncols+c] = 0.0;
 }
 
-//Trasformata
+/*Trasformata
 kernel void fft_prod(image2d_t read_only src, global real* restrict filter,
                  global complex* restrict vprod)
 {
@@ -210,7 +210,7 @@ kernel void fft_prod(image2d_t read_only src, global real* restrict filter,
                                  acc_img.x*acc_ker.y + acc_img.y*acc_ker.x
                                 );
 }
-
+*/
 kernel void fft_lmem(image2d_t read_only src, global real* restrict filter,
                      global complex* restrict dest, local complex2* restrict lmem)
 {
@@ -233,8 +233,7 @@ kernel void fft_lmem(image2d_t read_only src, global real* restrict filter,
           break;
 
       int el_per_wi = (numels + lws - 1)/lws;
-      complex acc_img = (complex)(0, 0);
-      complex acc_ker = (complex)(0, 0);
+      complex2 acc = (complex2)(0, 0, 0, 0);
 
       const real row_coeff = u/(real)nrows;
       const real col_coeff = v/(real)ncols;
@@ -252,13 +251,11 @@ kernel void fft_lmem(image2d_t read_only src, global real* restrict filter,
         real sinval, cosval;
         sinval = -sincos(r, &cosval);
 
-        if(val_img.x != 0)
-          acc_img += (complex)(val_img.x*cosval, sinval*val_img.x);
-        if(val_ker != 0)
-          acc_ker += (complex)(val_ker*cosval, sinval*val_ker);
+        acc += (complex2)(val_img.x*cosval, sinval*val_img.x,
+                          val_ker*cosval, sinval*val_ker);
       }
 
-      lmem[lidx] = (complex2)(acc_img.x, acc_img.y, acc_ker.x, acc_ker.y);
+      lmem[lidx] = acc;
 
       for(int attivi = lws/2; attivi >= 1; attivi /= 2)
       {
@@ -269,10 +266,11 @@ kernel void fft_lmem(image2d_t read_only src, global real* restrict filter,
 
       if(lidx == 0)
       {
-          dest[gidx + h*nwg] = (complex)(
-                                         (lmem[lidx].x*lmem[lidx].z - lmem[lidx].y*lmem[lidx].w),
-                                         (lmem[lidx].x*lmem[lidx].w + lmem[lidx].y*lmem[lidx].z)
-                                        );
+          dest[i] =
+              (complex)(
+                        (lmem[lidx].x*lmem[lidx].z - lmem[lidx].y*lmem[lidx].w),
+                        (lmem[lidx].x*lmem[lidx].w + lmem[lidx].y*lmem[lidx].z)
+                       );
       }
       barrier(CLK_LOCAL_MEM_FENCE);
     }
@@ -292,8 +290,6 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
     const int ncols = get_image_width(dest);
     const int nrows = get_image_height(dest);
 
-    //if(get_local_id(0) == 0 && get_local_id(1)== 0)
-      //printf("in: %d, %d\n", get_group_id(0), get_group_id(1));
     if(v >= ncols || u >= nrows)
         return;
 
@@ -313,7 +309,69 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
     real norm = clamp(acc, 0.0, 1.0);
     float4 out = (float4)(norm, norm, norm, 1);
     write_imagef(dest, (int2)(u, v), out);
-
-    //if(get_local_id(0) == 0 && get_local_id(1)== 0)
-      //printf("out: %d, %d\n", get_group_id(0), get_group_id(1));
 }
+
+/*
+kernel void ifft_lmem(global complex* restrict src, image2d_t write_only dest,
+                      local real* restrict lmem)
+{
+    int gidx = get_group_id(0);
+    int lidx = get_local_id(0);
+    const int lws = get_local_size(0);
+    const int nwg = get_global_size(0)/lws;
+    const int ncols = get_image_width(dest);
+    const int nrows = get_image_height(dest);
+    const int numels = nrows*ncols;
+
+    const int niters = (numels + nwg - 1)/nwg;
+    for(int h = 0; h < niters; ++h)
+    {
+      int i = gidx + h*nwg; //work-group linear index
+      int u = i/ncols;
+      int v = i - (u*ncols);
+
+      if(u >= nrows || v >= ncols)
+          break;
+
+      int el_per_wi = (numels + lws - 1)/lws;
+      real acc = 0;
+
+      const real row_coeff = u/(real)nrows;
+      const real col_coeff = v/(real)ncols;
+
+      for(int k = 0; k < el_per_wi; ++k)
+      {
+        int j = lidx + k*lws;
+        int row = j/ncols;
+        int col = j - (row*ncols);
+
+        complex val = src[row*ncols+col];
+        real r = _2PI * ((row*row_coeff) + (col*col_coeff));
+
+        real sinval, cosval;
+        sinval = -sincos(r, &cosval);
+
+        acc += (real)(val.x*cosval - sinval*val.y);
+      }
+
+      lmem[lidx] = acc;
+
+      for(int attivi = lws/2; attivi >= 1; attivi /= 2)
+      {
+        barrier(CLK_LOCAL_MEM_FENCE);
+        if(lidx < attivi)
+          lmem[lidx] += lmem[lidx + attivi];
+      }
+
+      if(lidx == 0)
+      {
+          lmem[lidx] /= (real)(numels);
+          real norm = clamp(lmem[lidx], 0.0, 1.0);
+          float4 out = (float4)(norm, norm, norm, 1);
+          write_imagef(dest, (int2)(nrows-u, ncols-v), out);
+      }
+
+      barrier(CLK_LOCAL_MEM_FENCE);
+    }
+}
+*/

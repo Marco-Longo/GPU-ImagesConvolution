@@ -113,7 +113,42 @@ cl_event ifft(cl_command_queue que, cl_kernel ifft_k, cl_mem d_src_mat,
 
     return evt_ifft;
 }
+/*
+cl_event ifft(cl_command_queue que, cl_kernel ifft_k, cl_mem d_src_mat,
+              cl_mem d_dest_img, int _lws, int _gws,
+              int n_wait_events, cl_event *wait_events)
+{
+    cl_int err;
+    cl_int arg = 0;
+    size_t ncols, nrows;
 
+    err = clGetImageInfo(d_dest_img, CL_IMAGE_WIDTH, sizeof(ncols),
+                         &ncols, NULL);
+    ocl_check(err, "get image width");
+
+    err = clGetImageInfo(d_dest_img, CL_IMAGE_HEIGHT, sizeof(nrows),
+                         &nrows, NULL);
+    ocl_check(err, "get image height");
+
+    const size_t lws[] = { _lws };
+    const size_t gws[] = { _gws };
+    size_t lmem_size = lws[0]*sizeof(real);
+
+    err = clSetKernelArg(ifft_k, arg++, sizeof(d_src_mat), &d_src_mat);
+    ocl_check(err, "set ifft arg %d", arg - 1);
+    err = clSetKernelArg(ifft_k, arg++, sizeof(d_dest_img), &d_dest_img);
+    ocl_check(err, "set ifft arg %d", arg - 1);
+    err = clSetKernelArg(ifft_k, arg++, lmem_size, NULL);
+    ocl_check(err, "set ifft arg %d", arg - 1);
+
+    cl_event evt_ifft;
+    err = clEnqueueNDRangeKernel(que, ifft_k, 1, NULL, gws, lws, n_wait_events,
+                                 wait_events, &evt_ifft);
+    ocl_check(err, "enqueue ifft");
+
+    return evt_ifft;
+}
+*/
 
 int main(int argc, char *argv[])
 {
