@@ -81,6 +81,48 @@ cl_event conv(cl_command_queue que, cl_kernel conv_k, cl_mem d_input,
     return evt_conv;
 }
 
+/*
+cl_event conv(cl_command_queue que, cl_kernel conv_k, cl_mem d_input,
+              cl_mem d_ker, cl_int f_dim, cl_mem d_output, int n_wait_events,
+              cl_event *wait_events)
+{
+    cl_int err;
+    cl_int arg = 0;
+    size_t ncols, nrows;
+
+    err = clGetImageInfo(d_input, CL_IMAGE_WIDTH, sizeof(ncols),
+                         &ncols, NULL);
+    ocl_check(err, "get image width");
+
+    err = clGetImageInfo(d_input, CL_IMAGE_HEIGHT, sizeof(nrows),
+                         &nrows, NULL);
+    ocl_check(err, "get image height");
+
+    const size_t lws[] = { 32, 8 };
+    const size_t gws[] = {
+                           round_mul_up(ncols, lws[0]),
+                           round_mul_up(nrows, lws[1]),
+                         };
+
+    err = clSetKernelArg(conv_k, arg++, sizeof(d_input), &d_input);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(d_ker), &d_ker);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(f_dim), &f_dim);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, sizeof(d_output), &d_output);
+    ocl_check(err, "set conv arg %d", arg - 1);
+    err = clSetKernelArg(conv_k, arg++, lws[0]*lws[1]*sizeof(real), NULL);
+    ocl_check(err, "set conv arg %d", arg - 1);
+
+    cl_event evt_conv;
+    err = clEnqueueNDRangeKernel(que, conv_k, 2, NULL, gws, lws,
+                                 n_wait_events, wait_events, &evt_conv);
+    ocl_check(err, "enqueue conv");
+
+    return evt_conv;
+}
+*/
 
 int main(int argc, char *argv[])
 {

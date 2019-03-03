@@ -179,11 +179,64 @@ kernel void conv(image2d_t read_only input, global const real* restrict filter,
     for(int x=0; x<f_dim; ++x)
         for(int y=0; y<f_dim; ++y)
         {
-            int row = clamp((int)(u-offset+x), 0, nrows-1);
-            int col = clamp((int)(v-offset+y), 0, ncols-1);
+            int row = u-offset+x;
+            int col = v-offset+y;
 
             float4 val = read_imagef(input, sampler, (int2)(row, col));
             acc += filter[x*f_dim+y]*val.x;
+        }
+
+    real norm = clamp(acc, 0.0f, 1.0f);
+    float4 out = (float4)(norm, norm, norm, 1);
+    write_imagef(output, (int2)(u, v), out);
+}
+
+/*Inefficiente
+kernel void conv_lmem(image2d_t read_only input, global const real* restrict filter,
+                 int f_dim, image2d_t write_only output, local real* restrict lmem)
+{
+#if 1
+    const int v = get_global_id(0);
+    const int u = get_global_id(1);
+#else
+    const int u = get_global_id(0);
+    const int v = get_global_id(1);
+#endif
+    const int ncols = get_image_width(input);
+    const int nrows = get_image_height(input);
+    const int gidx  = get_group_id(0);
+    const int lidx  = get_local_id(0);
+    const int lws   = get_local_size(0);
+    const int min_idx = gidx*lws;
+    const int max_idx = min_idx+lws;
+
+    float4 pixel = read_imagef(input, sampler, (int2)(u,v));
+    if(u < nrows || v < ncols)
+        lmem[lidx] = pixel.x;
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    if(u >= nrows || v >= ncols)
+        return;
+
+    int offset = f_dim/2;
+    real acc = 0.0;
+    for(int x=0; x<f_dim; ++x)
+        for(int y=0; y<f_dim; ++y)
+        {
+            int row = u-offset+x;
+            int col = v-offset+y;
+            int li  = row*ncols+col - gidx*lws;
+            // gi*lws <= li < (gi+1)*lws
+
+            float4 val;
+            if(li >= min_idx && li < max_idx)
+                val.x = lmem[li];
+            else
+                val = read_imagef(input, sampler, (int2)(row, col));
+
+            acc += filter[x*f_dim+y]*val.x;
+
         }
 
     real norm = clamp(acc, 0.0f, 1.0f);
@@ -246,3 +299,4 @@ kernel void conv4(image2d_t read_only input,
    out = (float4)(norm.w, norm.w, norm.w, 1);
    write_imagef(output, (int2)(u, v+3), out);
 }
+*/
