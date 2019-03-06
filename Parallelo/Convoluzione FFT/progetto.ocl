@@ -178,30 +178,32 @@ kernel void fft_prod(image2d_t read_only src, global real* restrict filter,
 #endif
     const int ncols = get_image_width(src);
     const int nrows = get_image_height(src);
-    
+
     if(v >= ncols || u >= nrows)
         return;
-    
+
     complex acc_img = (complex)(0, 0);
     complex acc_ker = (complex)(0, 0);
     const real row_coeff = u/(real)nrows;
     const real col_coeff = v/(real)ncols;
-    
+
     //FFT
     for(int row=0; row<nrows; ++row)
         for(int col=0; col<ncols; ++col)
         {
             real val_ker = filter[row*ncols+col];
             float4 val_img = read_imagef(src, sampler, (int2)(row, col));
-            
+
             real r = _2PI * ((row*row_coeff) + (col*col_coeff));
             real cosval, sinval;
             sinval = -sincos(r, &cosval); //
-            
-            acc_img += (complex)(val_img.x*cosval, val_img.x*sinval);
-            acc_ker += (complex)(val_ker*cosval, val_ker*sinval);
+
+            if(val_img.x != 0)
+              acc_img += (complex)(val_img.x*cosval, val_img.x*sinval);
+            if(val_ker != 0)
+              acc_ker += (complex)(val_ker*cosval, val_ker*sinval);
         }
-    
+
     //Prodotto puntuale: z*w = (a*c - b*d) + (a*d + b*c)*i
     vprod[u*ncols+v] = (complex)(
                                  acc_img.x*acc_ker.x - acc_img.y*acc_ker.y,
@@ -221,6 +223,9 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
 #endif
     const int ncols = get_image_width(dest);
     const int nrows = get_image_height(dest);
+
+    //if(get_local_id(0) == 0 && get_local_id(1)== 0)
+      //printf("in: %d, %d\n", get_group_id(0), get_group_id(1));
     if(v >= ncols || u >= nrows)
         return;
 
@@ -236,8 +241,11 @@ kernel void ifft(global complex* restrict src, image2d_t write_only dest)
             acc += (real)(val.x*cos(r) - val.y*sin(r));
         }
     acc /= (real)(nrows*ncols);
-
+    //acc /= 255;
     real norm = clamp(acc, 0.0, 1.0);
     float4 out = (float4)(norm, norm, norm, 1);
     write_imagef(dest, (int2)(u, v), out);
+
+    //if(get_local_id(0) == 0 && get_local_id(1)== 0)
+      //printf("out: %d, %d\n", get_group_id(0), get_group_id(1));
 }

@@ -278,10 +278,10 @@ int main(int argc, char *argv[])
            (1.0*memsize_real)/runtime_ns(evt_init));
 
     printf("fft_prod: %gms\t%gGB/s\n", runtime_ms(evt_fft),
-           (3.0*memsize_complex*npixels)/runtime_ns(evt_fft));
+           ((2.0*img.data_size)*(npixels+1))/runtime_ns(evt_fft));
 
     printf("ifft: %gms\t%gGB/s\n", runtime_ms(evt_ifft),
-           (2.0*memsize_complex*npixels)/runtime_ns(evt_ifft));
+           (1.0*memsize_complex*(npixels+1))/runtime_ns(evt_ifft));
 
     printf("download: %gms\t%gGB/s\n", runtime_ms(evt_download),
            (1.0*img.data_size)/runtime_ns(evt_download));

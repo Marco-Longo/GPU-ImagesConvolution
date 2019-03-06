@@ -171,7 +171,7 @@ int main(int argc, char *argv[])
 
     cl_kernel fft_prod_k = clCreateKernel(prog, "fft_prod", &err);
     ocl_check(err, "create kernel fft_prod");
-    
+
     cl_kernel ifft_k = clCreateKernel(prog, "ifft", &err);
     ocl_check(err, "create kernel ifft");
 
@@ -216,7 +216,7 @@ int main(int argc, char *argv[])
     cl_event evt_init = kerinit(que, kerinit_k, d_ker, img.height, img.width,
                                 0, NULL);
 
-    cl_event evt_fft = fft_prod(que, fft_prod_k, d_src_img, d_ker, 
+    cl_event evt_fft = fft_prod(que, fft_prod_k, d_src_img, d_ker,
                                 d_vprod, 1, &evt_init);
 
     cl_event evt_ifft = ifft(que, ifft_k, d_vprod, d_dest_img, 1, &evt_fft);
@@ -238,10 +238,10 @@ int main(int argc, char *argv[])
            (1.0*memsize_real)/runtime_ns(evt_init));
 
     printf("fft_prod: %gms\t%gGB/s\n", runtime_ms(evt_fft),
-           (3.0*memsize_complex*npixels)/runtime_ns(evt_fft));
+           ((2.0*img.data_size)*(npixels+1))/runtime_ns(evt_fft));
 
     printf("ifft: %gms\t%gGB/s\n", runtime_ms(evt_ifft),
-           (2.0*memsize_complex*npixels)/runtime_ns(evt_ifft));
+           (1.0*memsize_complex*(npixels+1))/runtime_ns(evt_ifft));
 
     printf("download: %gms\t%gGB/s\n", runtime_ms(evt_download),
            (1.0*img.data_size)/runtime_ns(evt_download));
